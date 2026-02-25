@@ -70,20 +70,9 @@ pub fn calculate(tokens: Vec<&str>) -> f64 {
                     values.push(0.);
                 }
 
-                while ops.len() > 0
+                while !ops.is_empty()
                     && precedence_map.get(&ops[ops.len() - 1]) >= precedence_map.get(*t)
                 {
-                    println!(
-                        "precedenceL {:?} >= {:?}",
-                        precedence_map.get(&ops[ops.len() - 1]),
-                        precedence_map.get(*t)
-                    );
-                    println!(
-                        "1 Applying operator: {}, values: {:?}, opts: {:?}",
-                        ops[ops.len() - 1],
-                        values,
-                        ops
-                    );
                     apply_top_operator(&mut values, &mut ops);
                 }
                 ops.push(t.to_string());
@@ -91,13 +80,7 @@ pub fn calculate(tokens: Vec<&str>) -> f64 {
         }
     }
 
-    while ops.len() > 0 {
-        println!(
-            "2 Applying operator: {}, values: {:?}, opts: {:?}",
-            ops[ops.len() - 1],
-            values,
-            ops
-        );
+    while !ops.is_empty() {
         apply_top_operator(&mut values, &mut ops);
     }
 
