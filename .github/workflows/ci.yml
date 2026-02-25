@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust format check
+        run: cargo fmt -- --check
+
+      - name: Rust lint (clippy)
+        run: cargo clippy -- -D warnings
+
+      - name: Rust tests
+        run: cargo test
