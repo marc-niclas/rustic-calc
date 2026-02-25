@@ -1,0 +1,9 @@
+[package]
+name = "rustic-calc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[dev-dependencies]
+approx = "0.5.1"
