@@ -42,7 +42,8 @@ pub fn tokenize(phrase: &str) -> Vec<&str> {
             b'*' => tokens.push("*"),
             b'x' => tokens.push("*"),
             b'/' => tokens.push("/"),
-            _ => panic!("Invalid character: {}", b as char),
+            b'^' => tokens.push("^"),
+            _ => (),
         }
 
         i += 1;
@@ -51,8 +52,9 @@ pub fn tokenize(phrase: &str) -> Vec<&str> {
     tokens
 }
 
-pub fn calculate(tokens: Vec<&str>) -> f64 {
+pub fn calculate(tokens: Vec<&str>) -> Result<f64, String> {
     let precedence_map: HashMap<String, i32> = HashMap::from([
+        ("^".to_string(), 3),
         ("*".to_string(), 2),
         ("/".to_string(), 2),
         ("+".to_string(), 1),
@@ -73,7 +75,7 @@ pub fn calculate(tokens: Vec<&str>) -> f64 {
                 while !ops.is_empty()
                     && precedence_map.get(&ops[ops.len() - 1]) >= precedence_map.get(*t)
                 {
-                    apply_top_operator(&mut values, &mut ops);
+                    apply_top_operator(&mut values, &mut ops)?;
                 }
                 ops.push(t.to_string());
             }
@@ -81,22 +83,48 @@ pub fn calculate(tokens: Vec<&str>) -> f64 {
     }
 
     while !ops.is_empty() {
-        apply_top_operator(&mut values, &mut ops);
+        apply_top_operator(&mut values, &mut ops)?;
     }
 
-    values[values.len() - 1]
+    if values.is_empty() {
+        Err("Expression could not be parsed".to_string())
+    } else {
+        Ok(values[values.len() - 1])
+    }
 }
 
-fn apply_top_operator(values: &mut Vec<f64>, ops: &mut Vec<String>) {
-    let op = ops.pop().expect("Missing operator");
-    let b = values.pop().expect("Missing right operand");
-    let a = values.pop().expect("Missing left operand");
+fn apply_top_operator(values: &mut Vec<f64>, ops: &mut Vec<String>) -> Result<(), String> {
+    let b = values.pop();
+    let a = values.pop();
 
-    match op.as_str() {
-        "+" => values.push(a + b),
-        "-" => values.push(a - b),
-        "*" => values.push(a * b),
-        "/" => values.push(a / b),
-        _ => panic!("Invalid operator: {}", op),
+    if let Some(op) = ops.pop() {
+        match (a, b) {
+            (Some(a), Some(b)) => match op.as_str() {
+                "+" => {
+                    values.push(a + b);
+                    Ok(())
+                }
+                "-" => {
+                    values.push(a - b);
+                    Ok(())
+                }
+                "*" => {
+                    values.push(a * b);
+                    Ok(())
+                }
+                "/" => {
+                    values.push(a / b);
+                    Ok(())
+                }
+                "^" => {
+                    values.push(a.powf(b));
+                    Ok(())
+                }
+                _ => Err("Missing operator".to_string()),
+            },
+            _ => Err("Missing operand".to_string()),
+        }
+    } else {
+        Err("Missing operator".to_string())
     }
 }
