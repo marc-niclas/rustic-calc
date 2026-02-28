@@ -1,0 +1,31 @@
+
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background: Dark terminal-like -->
+  <rect x="0" y="0" width="512" height="512" rx="64" fill="#0b0e14" />
+
+  <!-- Rust Gear (Stylized) -->
+  <g transform="translate(256, 256) scale(0.8)">
+    <circle cx="0" cy="0" r="150" fill="none" stroke="#dea584" stroke-width="40" stroke-dasharray="20 10" />
+    <circle cx="0" cy="0" r="100" fill="#dea584" />
+  </g>
+
+  <!-- Terminal Window Overlay -->
+  <rect x="100" y="150" width="312" height="212" rx="10" fill="#1e1e1e" stroke="#333" stroke-width="4" />
+
+  <!-- Terminal Header -->
+  <rect x="100" y="150" width="312" height="30" rx="10" fill="#333" />
+  <circle cx="120" cy="165" r="5" fill="#ff5f56" />
+  <circle cx="140" cy="165" r="5" fill="#ffbd2e" />
+  <circle cx="160" cy="165" r="5" fill="#27c93f" />
+
+  <!-- Terminal Content -->
+  <text x="120" y="220" font-family="monospace" font-size="24" fill="#4caf50" font-weight="bold">&gt; rustic-calc</text>
+  <text x="120" y="260" font-family="monospace" font-size="20" fill="#ccc">2 + 2 * 4</text>
+  <text x="120" y="300" font-family="monospace" font-size="20" fill="#dea584">= 10</text>
+
+  <!-- Cursor -->
+  <rect x="230" y="285" width="12" height="20" fill="#4caf50">
+    <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite" />
+  </rect>
+</svg>

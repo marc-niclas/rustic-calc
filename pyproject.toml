@@ -1,0 +1,24 @@
+[project]
+name = "rustic-calc"
+version = "0.1.0"
+description = "A TUI calculator based in rust"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[tool.semantic_release]
+version_toml = [
+    "pyproject.toml:project.version",
+    "Cargo.toml:package.version",
+]
+commit_message = "chore(release): v{version} [skip ci]"
+allow_zero_version = true
+build_command = """
+    set -eu
+    python -m pip install uv
+    apt-get update
+    apt-get install -y --no-install-recommends cargo
+    uv lock
+    cargo update -w
+    git add uv.lock Cargo.lock
+"""

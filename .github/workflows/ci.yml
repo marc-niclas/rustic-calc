@@ -30,3 +30,32 @@ jobs:
 
       - name: Rust tests
         run: cargo test
+
+  release:
+    if: github.event.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history so semantic-release can resolve commits
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release (python-semantic-release)
+        id: release
+        uses: python-semantic-release/python-semantic-release@v10.5.3
+        with:
+          changelog: true
+          commit: true
+          push: true
+          tag: true
+          vcs_release: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
