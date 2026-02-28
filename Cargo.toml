@@ -1,5 +1,6 @@
 [package]
 name = "rustic-calc"
+description = "A TUI calculator based in rust"
 version = "0.1.0"
 edition = "2024"
 
