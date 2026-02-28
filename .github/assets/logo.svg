@@ -22,10 +22,10 @@
   <!-- Terminal Content -->
   <text x="120" y="220" font-family="monospace" font-size="24" fill="#4caf50" font-weight="bold">&gt; rustic-calc</text>
   <text x="120" y="260" font-family="monospace" font-size="20" fill="#ccc">2 + 2 * 4</text>
-  <text x="120" y="300" font-family="monospace" font-size="20" fill="#dea584">= 10</text>
+  <text x="120" y="290" font-family="monospace" font-size="20" fill="#dea584">= 10</text>
 
   <!-- Cursor -->
-  <rect x="230" y="285" width="12" height="20" fill="#4caf50">
+  <rect x="120" y="310" width="12" height="20" fill="#4caf50">
     <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite" />
   </rect>
 </svg>
