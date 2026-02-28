@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+pub mod tui_app;
+
 pub fn tokenize(phrase: &str) -> Vec<&str> {
     let mut tokens: Vec<&str> = Vec::new();
     let bytes = phrase.as_bytes();
