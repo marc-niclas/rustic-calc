@@ -71,10 +71,7 @@ fn submit_message_records_error_and_clears_input() {
     assert_eq!(app.history.len(), 1);
     assert_eq!(app.history[0].expression, "asdf");
     assert_eq!(app.history[0].result, None);
-    assert_eq!(
-        app.history[0].error.as_deref(),
-        Some("Expression could not be parsed")
-    );
+    assert_eq!(app.history[0].error.as_deref(), Some("Unknown variable: a"));
 }
 
 #[test]
@@ -94,4 +91,20 @@ fn ctrl_c_returns_quit_signal() {
     let mut app = App::new();
     let quit = app.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
     assert!(quit);
+}
+
+#[test]
+fn save_variable() {
+    let mut app = App::new();
+    app.input = "x=2".to_string();
+    app.character_index = 3;
+
+    app.submit_message();
+
+    assert_eq!(app.input, "");
+    assert_eq!(app.character_index, 0);
+    assert_eq!(app.history.len(), 1);
+    assert_eq!(app.history[0].expression, "x=2");
+    assert_eq!(app.history[0].result, Some(2.));
+    assert!(app.history[0].variable_saved);
 }

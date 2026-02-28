@@ -1,5 +1,12 @@
+use std::collections::HashMap;
+
+use crate::calculate::calculate;
+use crate::tokenize::tokenize;
+use crate::variables::parse_variables;
 use color_eyre::Result;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::prelude::*;
+use ratatui::widgets::BorderType;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyEventKind},
@@ -8,8 +15,6 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, List, ListItem, Padding, Paragraph},
 };
-
-use crate::{calculate, tokenize};
 
 pub struct History {
     pub expression: String,
@@ -35,14 +40,19 @@ pub struct App {
     pub character_index: usize,
     /// History of recorded messages
     pub history: Vec<History>,
+    /// Variables stored in the calculator
+    pub variables: HashMap<String, f64>,
+    pub input_mode: bool,
 }
 
 impl App {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             input: String::new(),
             history: Vec::new(),
             character_index: 0,
+            variables: HashMap::new(),
+            input_mode: true,
         }
     }
 
@@ -105,15 +115,31 @@ impl App {
     }
 
     pub fn submit_message(&mut self) {
-        let tokenized = tokenize(&self.input);
-        let res = calculate(tokenized);
+        let mut tokenized = tokenize(&self.input);
+        let mut var_name: Option<String> = None;
+        if tokenized.contains(&"=") {
+            let parsed_variables = parse_variables(tokenized);
+            match parsed_variables {
+                Ok(result) => {
+                    tokenized = result.tokens;
+                    var_name = Some(result.var_name);
+                }
+                Err(err) => {
+                    self.history.push(History {
+                        expression: self.input.clone(),
+                        result: None,
+                        error: Some(err),
+                    });
+                    return;
+                }
+            }
+        }
+        let res = calculate(tokenized, &self.variables);
         match res {
             Ok(result) => {
-                self.history.push(History {
-                    expression: self.input.clone(),
-                    result: Some(result),
-                    error: None,
-                });
+                if let Some(var_name) = var_name {
+                    self.variables.insert(var_name.to_string(), result);
+                }
             }
             Err(err) => {
                 self.history.push(History {
@@ -157,6 +183,10 @@ impl App {
                 }
                 false
             }
+            KeyCode::Esc => {
+                self.input_mode = false;
+                false
+            }
             _ => false,
         }
     }
@@ -190,7 +220,8 @@ impl App {
         let help_message = Paragraph::new(text);
         frame.render_widget(help_message, help_area);
 
-        let input = Paragraph::new(format!("❯ {}", self.input))
+        let caret = if self.input_mode { "❯" } else { "❮" };
+        let input = Paragraph::new(format!("{} {}", caret, self.input))
             .style(Style::new().bg(Color::DarkGray))
             .block(Block::new().padding(Padding::vertical(1)));
         frame.render_widget(input, input_area);
@@ -198,6 +229,11 @@ impl App {
             input_area.x + self.character_index as u16 + 2,
             input_area.y + 1,
         ));
+
+        let layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(messages_area);
 
         let results: Vec<ListItem> = self
             .history
@@ -223,8 +259,34 @@ impl App {
                 }
             })
             .collect();
-        let results = List::new(results).block(Block::bordered().title("History"));
-        frame.render_widget(results, messages_area);
+        let results = List::new(results).block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title_style(Style::default().fg(Color::Cyan).bold())
+                .title("History"),
+        );
+        frame.render_widget(results, layout[0]);
+
+        let variable_items: Vec<ListItem> = self
+            .variables
+            .iter()
+            .map(|(k, v)| {
+                let content = Line::from(vec![
+                    Span::styled(format!("{} = ", k), Style::default().bold()),
+                    Span::styled(v.to_string(), Style::default().bold().green()),
+                ]);
+                ListItem::new(content)
+            })
+            .collect();
+        let variables = List::new(variable_items).block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Yellow))
+                .title_style(Style::default().fg(Color::Yellow).bold())
+                .title("Variables"),
+        );
+        frame.render_widget(variables, layout[1]);
     }
 }
 
