@@ -21,8 +21,16 @@ fn inspect_zero_unknown_variables() {
 }
 
 #[test]
-fn inspect_zero_one_variables() {
+fn inspect_one_variable() {
     let unknown_variables = inspect_unknown_variables(&vec!["2", "+", "a"], &HashMap::new());
+    assert_eq!(unknown_variables.len(), 1);
+    assert_eq!(unknown_variables[0], "a".to_string());
+}
+
+#[test]
+fn inspect_duplicate_variables() {
+    let unknown_variables =
+        inspect_unknown_variables(&vec!["2", "+", "a", "*", "a"], &HashMap::new());
     assert_eq!(unknown_variables.len(), 1);
     assert_eq!(unknown_variables[0], "a".to_string());
 }

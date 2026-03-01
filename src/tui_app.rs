@@ -357,7 +357,7 @@ impl App {
             if unknown_variables.len() == 1 {
                 let mut plot_data: Vec<(f64, f64)> = Vec::new();
                 let mut cloned_variables = self.variables.clone();
-                for i in 0..10 {
+                for i in 0..11 {
                     cloned_variables.insert(
                         unknown_variables[0].to_string(),
                         VariableEntry {
@@ -647,7 +647,7 @@ impl App {
         let left_pane = layout[1];
         let mut right_layout_constraints = vec![Constraint::Percentage(100)];
         if let Some(plot_data) = self.plot_data.as_ref()
-            && plot_data.len() == 1
+            && !plot_data.is_empty()
         {
             right_layout_constraints = vec![Constraint::Percentage(50), Constraint::Percentage(50)];
         }
@@ -748,8 +748,9 @@ impl App {
 
         if let Some(plot_data) = &self.plot_data
             && let Some(pane) = right_layout.get(1)
+            && let Some(last) = self.history.last()
         {
-            render_scatter(frame, *pane, plot_data);
+            render_scatter(frame, *pane, plot_data, last.expression.clone());
         }
     }
 }

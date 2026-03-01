@@ -20,7 +20,9 @@ pub fn inspect_unknown_variables(
         if OPERATORS.contains(t) {
             continue;
         }
-        unknown_variables.push(t.to_string());
+        if !unknown_variables.contains(&t.to_string()) {
+            unknown_variables.push(t.to_string());
+        }
     }
 
     unknown_variables
