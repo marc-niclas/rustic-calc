@@ -174,39 +174,76 @@ fn enter_on_variables_populates_input_from_selected_variable_expression() {
 }
 
 #[test]
-fn normal_mode_navigation_and_delete_under_cursor_work() {
+fn normal_mode_y_and_yy_no_longer_copy() {
     let mut app = App::new();
-    app.input = "12+34".to_string();
-    app.character_index = 5;
+    app.input = "abc".to_string();
+    app.character_index = app.input.chars().count();
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
 
-    app.handle_key_event(key_event(KeyCode::Char('0')));
-    assert_eq!(app.character_index, 0);
+    app.handle_key_event(key_event(KeyCode::Char('y')));
+    app.handle_key_event(key_event(KeyCode::Char('p')));
+    assert_eq!(app.input, "abc");
 
-    app.handle_key_event(key_event(KeyCode::Char('$')));
-    assert_eq!(app.character_index, 4);
-
-    app.handle_key_event(key_event(KeyCode::Char('h')));
-    assert_eq!(app.character_index, 3);
-
-    app.handle_key_event(key_event(KeyCode::Char('x')));
-    assert_eq!(app.input, "12+4");
-    assert_eq!(app.character_index, 3);
+    app.handle_key_event(key_event(KeyCode::Char('y')));
+    app.handle_key_event(key_event(KeyCode::Char('y')));
+    app.handle_key_event(key_event(KeyCode::Char('p')));
+    assert_eq!(app.input, "abc");
 }
 
 #[test]
-fn normal_mode_word_motions_work() {
+fn visual_mode_v_toggles_and_esc_returns_to_normal() {
     let mut app = App::new();
-    app.input = "abc + def_1".to_string();
-    app.character_index = 0;
+    app.input = "abcd".to_string();
+    app.character_index = app.input.chars().count();
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Char('w')));
-    assert_eq!(app.character_index, 6);
+    assert_eq!(app.input_edit_mode, InputEditMode::Normal);
 
-    app.handle_key_event(key_event(KeyCode::Char('b')));
-    assert_eq!(app.character_index, 0);
+    app.handle_key_event(key_event(KeyCode::Char('v'))); // Normal -> Visual
+    assert_eq!(app.input_edit_mode, InputEditMode::Visual);
+
+    app.handle_key_event(key_event(KeyCode::Char('v'))); // Visual -> Normal
+    assert_eq!(app.input_edit_mode, InputEditMode::Normal);
+
+    app.handle_key_event(key_event(KeyCode::Char('v'))); // Normal -> Visual
+    app.handle_key_event(key_event(KeyCode::Esc)); // Visual -> Normal
+    assert_eq!(app.input_edit_mode, InputEditMode::Normal);
+}
+
+#[test]
+fn visual_mode_yank_then_paste_works() {
+    let mut app = App::new();
+    app.input = "abcde".to_string();
+    app.character_index = app.input.chars().count();
+
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
+    app.handle_key_event(key_event(KeyCode::Char('0'))); // at 'a'
+    app.handle_key_event(key_event(KeyCode::Char('v'))); // start visual
+    app.handle_key_event(key_event(KeyCode::Char('l'))); // select "ab"
+    app.handle_key_event(key_event(KeyCode::Char('y'))); // yank selection, back to normal
+    app.handle_key_event(key_event(KeyCode::Char('$'))); // end
+    app.handle_key_event(key_event(KeyCode::Char('p'))); // paste after cursor
+
+    assert_eq!(app.input, "abcdeab");
+    assert_eq!(app.input_edit_mode, InputEditMode::Normal);
+}
+
+#[test]
+fn visual_mode_delete_selection_works() {
+    let mut app = App::new();
+    app.input = "abcde".to_string();
+    app.character_index = app.input.chars().count();
+
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
+    app.handle_key_event(key_event(KeyCode::Char('0'))); // at 'a'
+    app.handle_key_event(key_event(KeyCode::Char('l'))); // at 'b'
+    app.handle_key_event(key_event(KeyCode::Char('v'))); // anchor at 'b'
+    app.handle_key_event(key_event(KeyCode::Char('l'))); // select "bc"
+    app.handle_key_event(key_event(KeyCode::Char('d'))); // delete selection
+
+    assert_eq!(app.input, "ade");
+    assert_eq!(app.input_edit_mode, InputEditMode::Normal);
 }
 
 #[test]

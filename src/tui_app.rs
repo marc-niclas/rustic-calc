@@ -1,6 +1,11 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 use crate::calculate::calculate;
+pub use crate::input_editor::InputEditMode;
+use crate::input_editor::{EditorCommand, InputEditor, Motion};
 use crate::tokenize::tokenize;
 use crate::types::VariableEntry;
 use crate::variables::parse_variables;
@@ -40,10 +45,10 @@ pub enum Focus {
     Variables,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InputEditMode {
-    Insert,
-    Normal,
+struct YankFlash {
+    start: usize,
+    end: usize,
+    expires_at: Instant,
 }
 
 /// App holds the state of the application
@@ -61,173 +66,123 @@ pub struct App {
     pub input_edit_mode: InputEditMode,
     pub history_state: ListState,
     pub variables_state: ListState,
+    editor: InputEditor,
+    editor_needs_sync: bool,
+    yank_flash: Option<YankFlash>,
 }
 
 impl App {
     pub fn new() -> Self {
+        let editor = InputEditor::new();
         Self {
-            input: String::new(),
+            input: editor.input().to_string(),
             history: Vec::new(),
-            character_index: 0,
+            character_index: editor.cursor(),
             variables: HashMap::new(),
             input_mode: true,
             focus: Focus::Input,
-            input_edit_mode: InputEditMode::Insert,
+            input_edit_mode: editor.mode(),
             history_state: ListState::default(),
             variables_state: ListState::default(),
+            editor,
+            editor_needs_sync: false,
+            yank_flash: None,
         }
+    }
+
+    fn sync_public_from_editor(&mut self) {
+        self.input = self.editor.input().to_string();
+        self.character_index = self.editor.cursor();
+        self.input_edit_mode = self.editor.mode();
+        self.editor_needs_sync = false;
+    }
+
+    fn mark_editor_dirty_if_public_changed(&mut self) {
+        if self.input != self.editor.input()
+            || self.character_index != self.editor.cursor()
+            || self.input_edit_mode != self.editor.mode()
+        {
+            self.editor_needs_sync = true;
+        }
+    }
+
+    fn ensure_editor_synced_from_public(&mut self) {
+        if !self.editor_needs_sync {
+            return;
+        }
+
+        let public_len = self.input.chars().count();
+        let target_cursor = match self.input_edit_mode {
+            InputEditMode::Insert => self.character_index.min(public_len),
+            InputEditMode::Normal | InputEditMode::Visual => {
+                if public_len == 0 {
+                    0
+                } else {
+                    self.character_index.min(public_len - 1)
+                }
+            }
+        };
+
+        self.editor.set_input(self.input.clone());
+        match self.input_edit_mode {
+            InputEditMode::Insert => self.editor.switch_to_insert_mode(),
+            InputEditMode::Normal => self.editor.switch_to_normal_mode(),
+            InputEditMode::Visual => self.editor.switch_to_visual_mode(),
+        }
+
+        let mut current = self.editor.cursor();
+        while current > target_cursor {
+            match self.input_edit_mode {
+                InputEditMode::Insert => self.editor.move_insert_left(),
+                InputEditMode::Normal | InputEditMode::Visual => {
+                    self.editor.apply_motion(Motion::Left)
+                }
+            }
+            current = self.editor.cursor();
+        }
+        while current < target_cursor {
+            match self.input_edit_mode {
+                InputEditMode::Insert => self.editor.move_insert_right(),
+                InputEditMode::Normal | InputEditMode::Visual => {
+                    self.editor.apply_motion(Motion::Right)
+                }
+            }
+            let next = self.editor.cursor();
+            if next == current {
+                break;
+            }
+            current = next;
+        }
+
+        self.sync_public_from_editor();
     }
 
     pub fn move_cursor_left(&mut self) {
-        let cursor_moved_left = self.character_index.saturating_sub(1);
-        self.character_index = self.clamp_cursor(cursor_moved_left);
+        self.mark_editor_dirty_if_public_changed();
+        self.ensure_editor_synced_from_public();
+        self.editor.move_insert_left();
+        self.sync_public_from_editor();
     }
 
     pub fn move_cursor_right(&mut self) {
-        let cursor_moved_right = self.character_index.saturating_add(1);
-        self.character_index = self.clamp_cursor(cursor_moved_right);
-    }
-
-    fn move_cursor_left_normal(&mut self) {
-        if self.input.is_empty() {
-            self.character_index = 0;
-            return;
-        }
-        self.character_index = self.character_index.saturating_sub(1);
-    }
-
-    fn move_cursor_right_normal(&mut self) {
-        let len = self.input.chars().count();
-        if len == 0 {
-            self.character_index = 0;
-            return;
-        }
-        self.character_index = (self.character_index + 1).min(len - 1);
-    }
-
-    fn move_cursor_to_line_start(&mut self) {
-        self.character_index = 0;
-    }
-
-    fn move_cursor_to_line_end_insert(&mut self) {
-        self.character_index = self.input.chars().count();
-    }
-
-    fn move_cursor_to_line_end_normal(&mut self) {
-        let len = self.input.chars().count();
-        self.character_index = len.saturating_sub(1);
+        self.mark_editor_dirty_if_public_changed();
+        self.ensure_editor_synced_from_public();
+        self.editor.move_insert_right();
+        self.sync_public_from_editor();
     }
 
     pub fn enter_char(&mut self, new_char: char) {
-        let index = self.byte_index();
-        self.input.insert(index, new_char);
-        self.move_cursor_right();
-    }
-
-    /// Returns the byte index based on the character position.
-    ///
-    /// Since each character in a string can contain multiple bytes, it's necessary to calculate
-    /// the byte index based on the index of the character.
-    fn byte_index(&self) -> usize {
-        self.input
-            .char_indices()
-            .map(|(i, _)| i)
-            .nth(self.character_index)
-            .unwrap_or(self.input.len())
+        self.mark_editor_dirty_if_public_changed();
+        self.ensure_editor_synced_from_public();
+        self.editor.enter_char(new_char);
+        self.sync_public_from_editor();
     }
 
     pub fn delete_char(&mut self) {
-        let is_not_cursor_leftmost = self.character_index != 0;
-        if is_not_cursor_leftmost {
-            let current_index = self.character_index;
-            let from_left_to_current_index = current_index - 1;
-
-            let before_char_to_delete = self.input.chars().take(from_left_to_current_index);
-            let after_char_to_delete = self.input.chars().skip(current_index);
-
-            self.input = before_char_to_delete.chain(after_char_to_delete).collect();
-            self.move_cursor_left();
-        }
-    }
-
-    fn delete_char_under_cursor(&mut self) {
-        let len = self.input.chars().count();
-        if len == 0 || self.character_index >= len {
-            return;
-        }
-
-        let idx = self.character_index;
-        let before = self.input.chars().take(idx);
-        let after = self.input.chars().skip(idx + 1);
-        self.input = before.chain(after).collect();
-
-        let new_len = self.input.chars().count();
-        if new_len == 0 {
-            self.character_index = 0;
-        } else if self.character_index >= new_len {
-            self.character_index = new_len - 1;
-        }
-    }
-
-    fn is_word_char(c: char) -> bool {
-        c.is_alphanumeric() || c == '_'
-    }
-
-    fn move_cursor_word_forward(&mut self) {
-        let chars: Vec<char> = self.input.chars().collect();
-        let len = chars.len();
-        if len == 0 {
-            self.character_index = 0;
-            return;
-        }
-
-        let mut i = self.character_index.min(len - 1);
-
-        if Self::is_word_char(chars[i]) {
-            while i < len && Self::is_word_char(chars[i]) {
-                i += 1;
-            }
-        }
-
-        while i < len && !Self::is_word_char(chars[i]) {
-            i += 1;
-        }
-
-        self.character_index = if i >= len { len - 1 } else { i };
-    }
-
-    fn move_cursor_word_backward(&mut self) {
-        let chars: Vec<char> = self.input.chars().collect();
-        let len = chars.len();
-        if len == 0 {
-            self.character_index = 0;
-            return;
-        }
-
-        let mut i = self.character_index.min(len - 1);
-        if i == 0 {
-            return;
-        }
-
-        i -= 1;
-
-        while i > 0 && !Self::is_word_char(chars[i]) {
-            i -= 1;
-        }
-
-        while i > 0 && Self::is_word_char(chars[i - 1]) {
-            i -= 1;
-        }
-
-        self.character_index = i;
-    }
-
-    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
-        new_cursor_pos.clamp(0, self.input.chars().count())
-    }
-
-    fn reset_cursor(&mut self) {
-        self.character_index = 0;
+        self.mark_editor_dirty_if_public_changed();
+        self.ensure_editor_synced_from_public();
+        self.editor.backspace();
+        self.sync_public_from_editor();
     }
 
     fn set_focus(&mut self, focus: Focus) {
@@ -243,21 +198,23 @@ impl App {
 
     fn set_input_edit_mode(&mut self, mode: InputEditMode) {
         self.input_edit_mode = mode;
+        self.editor_needs_sync = true;
+        self.ensure_editor_synced_from_public();
     }
 
-    fn switch_to_normal_mode(&mut self) {
-        self.input_edit_mode = InputEditMode::Normal;
-        let len = self.input.chars().count();
-        if len == 0 {
-            self.character_index = 0;
-            return;
-        }
-        self.character_index = self.character_index.saturating_sub(1).min(len - 1);
-    }
-
-    fn switch_to_insert_mode(&mut self) {
+    fn set_input_text(&mut self, text: String) {
+        self.input = text;
+        self.character_index = self.input.chars().count();
         self.input_edit_mode = InputEditMode::Insert;
-        self.character_index = self.clamp_cursor(self.character_index);
+        self.editor_needs_sync = true;
+        self.ensure_editor_synced_from_public();
+        self.yank_flash = None;
+    }
+
+    fn reset_cursor(&mut self) {
+        self.character_index = 0;
+        self.editor_needs_sync = true;
+        self.ensure_editor_synced_from_public();
     }
 
     fn select_first_history_if_available(&mut self) {
@@ -348,10 +305,8 @@ impl App {
             && selected_visual_idx < len
         {
             let history_idx = len - 1 - selected_visual_idx;
-            self.input = self.history[history_idx].expression.clone();
-            self.character_index = self.input.chars().count();
+            self.set_input_text(self.history[history_idx].expression.clone());
             self.set_focus(Focus::Input);
-            self.set_input_edit_mode(InputEditMode::Insert);
         }
     }
 
@@ -361,10 +316,8 @@ impl App {
             && let Some(key) = keys.get(selected_idx)
             && let Some(entry) = self.variables.get(key)
         {
-            self.input = entry.expression.clone();
-            self.character_index = self.input.chars().count();
+            self.set_input_text(entry.expression.clone());
             self.set_focus(Focus::Input);
-            self.set_input_edit_mode(InputEditMode::Insert);
         }
     }
 
@@ -375,7 +328,6 @@ impl App {
 
         let mut tokenized = tokenize(&self.input);
         let mut var_name: Option<String> = None;
-
         if tokenized.contains(&"=") {
             let parsed_variables = parse_variables(tokenized);
             match parsed_variables {
@@ -426,111 +378,43 @@ impl App {
         self.reset_cursor();
         self.set_focus(Focus::Input);
         self.set_input_edit_mode(InputEditMode::Insert);
+        self.yank_flash = None;
     }
 
-    fn handle_input_key_event(&mut self, code: KeyCode) -> bool {
-        match self.input_edit_mode {
-            InputEditMode::Insert => match code {
-                KeyCode::Esc => {
-                    self.switch_to_normal_mode();
-                    false
-                }
-                KeyCode::Enter => {
-                    self.submit_message();
-                    false
-                }
-                KeyCode::Char(to_insert) => {
-                    self.enter_char(to_insert);
-                    false
-                }
-                KeyCode::Backspace => {
-                    self.delete_char();
-                    false
-                }
-                KeyCode::Left => {
-                    self.move_cursor_left();
-                    false
-                }
-                KeyCode::Right => {
-                    self.move_cursor_right();
-                    false
-                }
-                KeyCode::Up => {
-                    if let Some(last) = self.history.last() {
-                        self.input = last.expression.clone();
-                        self.character_index = self.input.chars().count();
-                    }
-                    false
-                }
-                _ => false,
-            },
-            InputEditMode::Normal => match code {
-                KeyCode::Esc => {
-                    self.set_focus(Focus::Variables);
-                    false
-                }
-                KeyCode::Enter => {
-                    self.submit_message();
-                    false
-                }
-                KeyCode::Left | KeyCode::Char('h') => {
-                    self.move_cursor_left_normal();
-                    false
-                }
-                KeyCode::Right | KeyCode::Char('l') => {
-                    self.move_cursor_right_normal();
-                    false
-                }
-                KeyCode::Down => {
-                    self.focus = Focus::History;
-                    false
-                }
-                KeyCode::Char('0') => {
-                    self.move_cursor_to_line_start();
-                    false
-                }
-                KeyCode::Char('$') => {
-                    self.move_cursor_to_line_end_normal();
-                    false
-                }
-                KeyCode::Char('x') => {
-                    self.delete_char_under_cursor();
-                    false
-                }
-                KeyCode::Char('w') => {
-                    self.move_cursor_word_forward();
-                    false
-                }
-                KeyCode::Char('b') => {
-                    self.move_cursor_word_backward();
-                    false
-                }
-                KeyCode::Char('i') => {
-                    self.switch_to_insert_mode();
-                    false
-                }
-                KeyCode::Char('a') => {
-                    let len = self.input.chars().count();
-                    if len == 0 {
-                        self.character_index = 0;
-                    } else {
-                        self.character_index = (self.character_index + 1).min(len);
-                    }
-                    self.switch_to_insert_mode();
-                    false
-                }
-                KeyCode::Char('A') => {
-                    self.move_cursor_to_line_end_insert();
-                    self.switch_to_insert_mode();
-                    false
-                }
-                KeyCode::Char('I') => {
-                    self.move_cursor_to_line_start();
-                    self.switch_to_insert_mode();
-                    false
-                }
-                _ => false,
-            },
+    fn handle_input_key_event(&mut self, key: KeyEvent) -> bool {
+        if key.code == KeyCode::Up && matches!(self.input_edit_mode, InputEditMode::Insert) {
+            if let Some(last) = self.history.last() {
+                self.set_input_text(last.expression.clone());
+            }
+            return false;
+        }
+
+        self.mark_editor_dirty_if_public_changed();
+        self.ensure_editor_synced_from_public();
+        match self.editor.handle_key_event(key) {
+            EditorCommand::None => {
+                self.sync_public_from_editor();
+                false
+            }
+            EditorCommand::Submit => {
+                self.sync_public_from_editor();
+                self.submit_message();
+                false
+            }
+            EditorCommand::ExitInputMode => {
+                self.sync_public_from_editor();
+                self.set_focus(Focus::Variables);
+                false
+            }
+            EditorCommand::Yanked { start, end } => {
+                self.sync_public_from_editor();
+                self.yank_flash = Some(YankFlash {
+                    start,
+                    end,
+                    expires_at: Instant::now() + Duration::from_millis(250),
+                });
+                false
+            }
         }
     }
 
@@ -583,16 +467,23 @@ impl App {
         }
 
         match self.focus {
-            Focus::Input => self.handle_input_key_event(key.code),
+            Focus::Input => self.handle_input_key_event(key),
             Focus::History | Focus::Variables => self.handle_list_key_event(key.code),
         }
     }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
+            if let Some(flash) = &self.yank_flash
+                && Instant::now() >= flash.expires_at
+            {
+                self.yank_flash = None;
+            }
+
             terminal.draw(|frame| self.draw(frame))?;
 
-            if let Event::Key(key) = event::read()?
+            if event::poll(Duration::from_millis(16))?
+                && let Event::Key(key) = event::read()?
                 && key.kind == KeyEventKind::Press
                 && self.handle_key_event(key)
             {
@@ -613,14 +504,23 @@ impl App {
             Focus::Input => match self.input_edit_mode {
                 InputEditMode::Insert => "INSERT",
                 InputEditMode::Normal => "NORMAL",
+                InputEditMode::Visual => "VISUAL",
             },
             Focus::History => "HISTORY",
             Focus::Variables => "VARIABLES",
         };
 
         let help_line = Line::from(vec![
-            Span::styled(format!("[{}] ", mode_label), Style::default().bold()),
-            Span::raw("Enter: submit/select • Esc: mode/focus • i: input mode"),
+            Span::styled(
+                format!("[{}] ", mode_label),
+                match self.input_edit_mode {
+                    InputEditMode::Insert => Style::default().bold(),
+                    InputEditMode::Normal | InputEditMode::Visual => Style::default().bold().blue(),
+                },
+            ),
+            Span::raw(
+                "Enter: submit/select • Esc: mode/focus • i: input • v: visual • y: yank • d/x: delete • p/P: paste",
+            ),
         ]);
         let help_message = Paragraph::new(Text::from(help_line));
         frame.render_widget(help_message, help_area);
@@ -628,13 +528,61 @@ impl App {
         let caret = if matches!(self.focus, Focus::Input) {
             match self.input_edit_mode {
                 InputEditMode::Insert => "❯",
-                InputEditMode::Normal => "▮",
+                InputEditMode::Normal | InputEditMode::Visual => "❮",
             }
         } else {
             "❮"
         };
 
-        let input = Paragraph::new(format!("{} {}", caret, self.input))
+        let visual_range = if matches!(self.focus, Focus::Input)
+            && matches!(self.input_edit_mode, InputEditMode::Visual)
+        {
+            self.editor.visual_selection_range()
+        } else {
+            None
+        };
+
+        let now = Instant::now();
+        let flash_range = self.yank_flash.as_ref().and_then(|flash| {
+            if now < flash.expires_at {
+                Some((flash.start, flash.end))
+            } else {
+                None
+            }
+        });
+
+        let mut spans = vec![Span::raw(format!("{} ", caret))];
+        for (idx, ch) in self.input.chars().enumerate() {
+            let ch_text = ch.to_string();
+            if let Some((start, end)) = flash_range
+                && idx >= start
+                && idx <= end
+            {
+                spans.push(Span::styled(
+                    ch_text,
+                    Style::default()
+                        .bg(Color::Rgb(255, 165, 0))
+                        .fg(Color::Black)
+                        .bold(),
+                ));
+                continue;
+            }
+
+            if let Some((start, end)) = visual_range
+                && idx >= start
+                && idx <= end
+            {
+                spans.push(Span::styled(
+                    ch_text,
+                    Style::default().bg(Color::Cyan).fg(Color::Black),
+                ));
+                continue;
+            }
+
+            spans.push(Span::raw(ch_text));
+        }
+
+        let input = Paragraph::new(Line::from(spans))
             .style(Style::new().bg(Color::DarkGray))
             .block(Block::new().padding(Padding::vertical(1)));
         frame.render_widget(input, input_area);
