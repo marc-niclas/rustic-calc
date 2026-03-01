@@ -11,7 +11,8 @@ pub enum InputEditMode {
 pub enum EditorCommand {
     None,
     Submit,
-    ExitInputMode,
+    IncrementFocus,
+    DecrementFocus,
     Yanked { start: usize, end: usize },
 }
 
@@ -82,8 +83,20 @@ impl InputEditor {
         &self.register
     }
 
-    pub fn visual_selection_range(&self) -> Option<(usize, usize)> {
-        self.visual_range()
+    pub fn visual_range(&self) -> Option<(usize, usize)> {
+        let len = self.char_len();
+        if len == 0 {
+            return None;
+        }
+
+        let anchor = self.visual_anchor?.min(len - 1);
+        let cursor = self.cursor.min(len - 1);
+
+        if anchor <= cursor {
+            Some((anchor, cursor))
+        } else {
+            Some((cursor, anchor))
+        }
     }
 
     pub fn set_input(&mut self, input: String) {
@@ -356,8 +369,9 @@ impl InputEditor {
 
     fn handle_normal_key(&mut self, code: KeyCode) -> EditorCommand {
         match code {
-            KeyCode::Esc => EditorCommand::ExitInputMode,
             KeyCode::Enter => EditorCommand::Submit,
+            KeyCode::Tab => EditorCommand::IncrementFocus,
+            KeyCode::BackTab => EditorCommand::DecrementFocus,
 
             KeyCode::Char('i') => {
                 self.switch_to_insert_mode();
@@ -438,22 +452,6 @@ impl InputEditor {
                 }
                 EditorCommand::None
             }
-        }
-    }
-
-    fn visual_range(&self) -> Option<(usize, usize)> {
-        let len = self.char_len();
-        if len == 0 {
-            return None;
-        }
-
-        let anchor = self.visual_anchor?.min(len - 1);
-        let cursor = self.cursor.min(len - 1);
-
-        if anchor <= cursor {
-            Some((anchor, cursor))
-        } else {
-            Some((cursor, anchor))
         }
     }
 

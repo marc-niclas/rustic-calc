@@ -73,7 +73,10 @@ fn submit_message_records_error_and_clears_input() {
     assert_eq!(app.history.len(), 1);
     assert_eq!(app.history[0].expression, "asdf");
     assert_eq!(app.history[0].result, None);
-    assert_eq!(app.history[0].error.as_deref(), Some("Unknown variable: a"));
+    assert_eq!(
+        app.history[0].error.as_deref(),
+        Some("Unknown variables: a, s, d, f")
+    );
 }
 
 #[test]
@@ -106,19 +109,37 @@ fn esc_in_insert_switches_to_normal_mode() {
 }
 
 #[test]
-fn esc_in_normal_switches_focus_to_history_and_selects_first() {
+fn tab_cycles_focus_forward_across_all_panes() {
     let mut app = App::new();
-    app.input = "x=2".to_string();
-    app.submit_message();
-    app.input = "y=3".to_string();
-    app.submit_message();
 
-    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> History
-    app.handle_key_event(key_event(KeyCode::Right)); // History -> Variables
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal (Input focused)
+    assert_eq!(app.focus, Focus::Input);
 
+    app.handle_key_event(key_event(KeyCode::Tab)); // Input -> History
+    assert_eq!(app.focus, Focus::History);
+
+    app.handle_key_event(key_event(KeyCode::Tab)); // History -> Variables
     assert_eq!(app.focus, Focus::Variables);
-    assert_eq!(app.variables_state.selected(), Some(0));
+
+    app.handle_key_event(key_event(KeyCode::Tab)); // Variables -> Input
+    assert_eq!(app.focus, Focus::Input);
+}
+
+#[test]
+fn backtab_cycles_focus_backward_across_all_panes() {
+    let mut app = App::new();
+
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal (Input focused)
+    assert_eq!(app.focus, Focus::Input);
+
+    app.handle_key_event(key_event(KeyCode::BackTab)); // Input -> Variables
+    assert_eq!(app.focus, Focus::Variables);
+
+    app.handle_key_event(key_event(KeyCode::BackTab)); // Variables -> History
+    assert_eq!(app.focus, Focus::History);
+
+    app.handle_key_event(key_event(KeyCode::BackTab)); // History -> Input
+    assert_eq!(app.focus, Focus::Input);
 }
 
 #[test]
@@ -128,7 +149,7 @@ fn pressing_i_while_not_in_input_mode_re_enters_input_insert_mode() {
     app.submit_message();
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
+    app.handle_key_event(key_event(KeyCode::Tab)); // Normal -> Variables
     assert_eq!(app.focus, Focus::History);
 
     app.handle_key_event(key_event(KeyCode::Char('i')));
@@ -146,7 +167,7 @@ fn enter_on_history_populates_input_from_selected_item() {
     app.submit_message();
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
+    app.handle_key_event(key_event(KeyCode::Tab)); // Normal -> Variables
     app.handle_key_event(key_event(KeyCode::Left)); // Variables -> History
     app.handle_key_event(key_event(KeyCode::Enter)); // Populate input
 
@@ -165,7 +186,7 @@ fn enter_on_variables_populates_input_from_selected_variable_expression() {
     app.submit_message();
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> History
+    app.handle_key_event(key_event(KeyCode::Tab)); // Normal -> History
     app.handle_key_event(key_event(KeyCode::Right)); // History -> Variables
     app.handle_key_event(key_event(KeyCode::Enter)); // Populate input from selected variable
 
@@ -264,4 +285,22 @@ fn save_variable() {
         "x=2".to_string()
     );
     assert_eq!(app.variables.get("x").unwrap().value, 2.0);
+}
+
+#[test]
+fn plot_expression() {
+    let mut app = App::new();
+    app.input = "7x+1".to_string();
+    app.character_index = 4;
+
+    app.submit_message();
+
+    assert_eq!(app.input, "");
+    assert_eq!(app.character_index, 0);
+    assert_eq!(app.history.len(), 1);
+    let plot_data = app.plot_data.unwrap();
+    assert_eq!(plot_data.len(), 21);
+    println!("{plot_data:?}");
+    assert_eq!(plot_data[0], (-10.0, -69.0));
+    assert_eq!(plot_data[20], (10.0, 71.0));
 }

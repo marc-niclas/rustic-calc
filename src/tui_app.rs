@@ -3,25 +3,28 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::calculate::calculate;
 pub use crate::input_editor::InputEditMode;
-use crate::input_editor::{EditorCommand, InputEditor, Motion};
-use crate::tokenize::tokenize;
-use crate::types::VariableEntry;
-use crate::variables::parse_variables;
+use crate::{
+    calculate::calculate, inspect::inspect_unknown_variables, types::YankFlash,
+    widgets::input_area::render_input,
+};
+use crate::{
+    input_editor::{EditorCommand, InputEditor, Motion},
+    widgets::plot_block::render_scatter,
+};
+use crate::{tokenize::tokenize, widgets::variable_block::render_variable_block};
+use crate::{types::VariableEntry, widgets::history_block::render_history_block};
+use crate::{variables::parse_variables, widgets::help_message::render_help_message};
 use color_eyre::Result;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::prelude::*;
-use ratatui::widgets::BorderType;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyEventKind},
-    layout::{Constraint, Layout, Position},
-    style::{Color, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, List, ListItem, ListState, Padding, Paragraph},
+    layout::{Constraint, Direction, Layout, Position},
+    widgets::ListState,
 };
 
+#[derive(Debug, Clone)]
 pub struct History {
     pub expression: String,
     pub result: Option<f64>,
@@ -33,7 +36,7 @@ impl std::fmt::Display for History {
         match (self.result, self.error.clone()) {
             (Some(result), _) => write!(f, "{} = {}", self.expression, result),
             (_, Some(error)) => write!(f, "'{}' resulted in error: {}", self.expression, error),
-            _ => panic!("Either provide an error or a result"),
+            (_, _) => write!(f, "{} 📈", self.expression),
         }
     }
 }
@@ -45,10 +48,22 @@ pub enum Focus {
     Variables,
 }
 
-struct YankFlash {
-    start: usize,
-    end: usize,
-    expires_at: Instant,
+impl Focus {
+    pub fn next(self) -> Self {
+        match self {
+            Focus::Input => Focus::History,
+            Focus::History => Focus::Variables,
+            Focus::Variables => Focus::Input, // wrap
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        match self {
+            Focus::Input => Focus::Variables, // wrap
+            Focus::History => Focus::Input,
+            Focus::Variables => Focus::History,
+        }
+    }
 }
 
 /// App holds the state of the application
@@ -66,6 +81,7 @@ pub struct App {
     pub input_edit_mode: InputEditMode,
     pub history_state: ListState,
     pub variables_state: ListState,
+    pub plot_data: Option<Vec<(f64, f64)>>,
     editor: InputEditor,
     editor_needs_sync: bool,
     yank_flash: Option<YankFlash>,
@@ -84,6 +100,7 @@ impl App {
             input_edit_mode: editor.mode(),
             history_state: ListState::default(),
             variables_state: ListState::default(),
+            plot_data: None,
             editor,
             editor_needs_sync: false,
             yank_flash: None,
@@ -346,6 +363,45 @@ impl App {
             }
         }
 
+        let unknown_variables = inspect_unknown_variables(&tokenized, &self.variables);
+        if !unknown_variables.is_empty() {
+            if unknown_variables.len() == 1 {
+                let mut plot_data: Vec<(f64, f64)> = Vec::new();
+                let mut cloned_variables = self.variables.clone();
+                for i in -10..11 {
+                    cloned_variables.insert(
+                        unknown_variables[0].to_string(),
+                        VariableEntry {
+                            expression: "".to_string(),
+                            value: i as f64,
+                        },
+                    );
+                    let value = calculate(tokenized.clone(), &cloned_variables).unwrap_or_default();
+                    plot_data.push((i as f64, value));
+                }
+                self.plot_data = Some(plot_data);
+                self.history.push(History {
+                    expression: self.input.clone(),
+                    result: None,
+                    error: None,
+                });
+                self.input.clear();
+                self.reset_cursor();
+                return;
+            }
+
+            self.history.push(History {
+                expression: self.input.clone(),
+                result: None,
+                error: Some(format!(
+                    "Unknown variables: {}",
+                    unknown_variables.join(", ")
+                )),
+            });
+            self.input.clear();
+            self.reset_cursor();
+            return;
+        }
         let res = calculate(tokenized, &self.variables);
         match res {
             Ok(result) => {
@@ -401,9 +457,12 @@ impl App {
                 self.submit_message();
                 false
             }
-            EditorCommand::ExitInputMode => {
-                self.sync_public_from_editor();
-                self.set_focus(Focus::History);
+            EditorCommand::IncrementFocus => {
+                self.set_focus(self.focus.next());
+                false
+            }
+            EditorCommand::DecrementFocus => {
+                self.set_focus(self.focus.prev());
                 false
             }
             EditorCommand::Yanked { start, end } => {
@@ -431,6 +490,14 @@ impl App {
             KeyCode::Char('i') => {
                 self.set_focus(Focus::Input);
                 self.set_input_edit_mode(InputEditMode::Insert);
+                false
+            }
+            KeyCode::Tab => {
+                self.set_focus(self.focus.next());
+                false
+            }
+            KeyCode::BackTab => {
+                self.set_focus(self.focus.prev());
                 false
             }
             KeyCode::Left => {
@@ -500,91 +567,18 @@ impl App {
         ]);
         let [help_area, input_area, messages_area] = vertical.areas(frame.area());
 
-        let mode_label = match self.focus {
-            Focus::Input => match self.input_edit_mode {
-                InputEditMode::Insert => "INSERT",
-                InputEditMode::Normal => "NORMAL",
-                InputEditMode::Visual => "VISUAL",
-            },
-            Focus::History => "HISTORY",
-            Focus::Variables => "VARIABLES",
-        };
-
-        let help_line = Line::from(vec![
-            Span::styled(
-                format!("[{}] ", mode_label),
-                match self.input_edit_mode {
-                    InputEditMode::Insert => Style::default().bold(),
-                    InputEditMode::Normal | InputEditMode::Visual => Style::default().bold().blue(),
-                },
-            ),
-            Span::raw(
-                "Enter: submit/select • Esc: mode/focus • i: input • v: visual • y: yank • d/x: delete • p/P: paste",
-            ),
-        ]);
-        let help_message = Paragraph::new(Text::from(help_line));
+        let help_message = render_help_message(self.focus, self.input_edit_mode);
         frame.render_widget(help_message, help_area);
 
-        let caret = if matches!(self.focus, Focus::Input) {
-            match self.input_edit_mode {
-                InputEditMode::Insert => "❯",
-                InputEditMode::Normal | InputEditMode::Visual => "❮",
-            }
-        } else {
-            "❮"
-        };
+        let get_visual_range = || self.editor.visual_range();
 
-        let visual_range = if matches!(self.focus, Focus::Input)
-            && matches!(self.input_edit_mode, InputEditMode::Visual)
-        {
-            self.editor.visual_selection_range()
-        } else {
-            None
-        };
-
-        let now = Instant::now();
-        let flash_range = self.yank_flash.as_ref().and_then(|flash| {
-            if now < flash.expires_at {
-                Some((flash.start, flash.end))
-            } else {
-                None
-            }
-        });
-
-        let mut spans = vec![Span::raw(format!("{} ", caret))];
-        for (idx, ch) in self.input.chars().enumerate() {
-            let ch_text = ch.to_string();
-            if let Some((start, end)) = flash_range
-                && idx >= start
-                && idx <= end
-            {
-                spans.push(Span::styled(
-                    ch_text,
-                    Style::default()
-                        .bg(Color::Rgb(255, 165, 0))
-                        .fg(Color::Black)
-                        .bold(),
-                ));
-                continue;
-            }
-
-            if let Some((start, end)) = visual_range
-                && idx >= start
-                && idx <= end
-            {
-                spans.push(Span::styled(
-                    ch_text,
-                    Style::default().bg(Color::Cyan).fg(Color::Black),
-                ));
-                continue;
-            }
-
-            spans.push(Span::raw(ch_text));
-        }
-
-        let input = Paragraph::new(Line::from(spans))
-            .style(Style::new().bg(Color::DarkGray))
-            .block(Block::new().padding(Padding::vertical(1)));
+        let input = render_input(
+            self.focus,
+            self.input_edit_mode,
+            &self.input,
+            self.yank_flash.as_ref(),
+            get_visual_range,
+        );
         frame.render_widget(input, input_area);
 
         if matches!(self.focus, Focus::Input) {
@@ -598,89 +592,32 @@ impl App {
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(messages_area);
+        let right_pane = layout[0];
+        let left_pane = layout[1];
+        let mut right_layout_constraints = vec![Constraint::Percentage(100)];
+        if let Some(plot_data) = self.plot_data.as_ref()
+            && !plot_data.is_empty()
+        {
+            right_layout_constraints = vec![Constraint::Percentage(50), Constraint::Percentage(50)];
+        }
+        let right_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(right_layout_constraints)
+            .split(right_pane);
 
-        let results: Vec<ListItem> = self
-            .history
-            .iter()
-            .enumerate()
-            .rev()
-            .map(|(i, m)| match m.result {
-                Some(result) => {
-                    let content = Line::from(vec![
-                        Span::styled(format!("{} ", i + 1), Style::default().dim()),
-                        Span::styled(m.expression.clone(), Style::default().blue()),
-                        Span::raw(" = "),
-                        Span::styled(result.to_string(), Style::default().bold().green()),
-                    ]);
-                    ListItem::new(content)
-                }
-                _ => {
-                    let content = Line::from(vec![
-                        Span::raw(format!("{}: ", i + 1)),
-                        Span::styled(format!("{m}"), Style::default().red().bold()),
-                    ]);
-                    ListItem::new(content)
-                }
-            })
-            .collect();
+        let history_block = render_history_block(&self.history, self.focus);
+        frame.render_stateful_widget(history_block, right_layout[0], &mut self.history_state);
 
-        let history_focused = matches!(self.focus, Focus::History);
-        let results = List::new(results)
-            .highlight_style(Style::default().bg(Color::DarkGray).bold())
-            .highlight_symbol("› ")
-            .block(
-                Block::bordered()
-                    .border_type(if history_focused {
-                        BorderType::Thick
-                    } else {
-                        BorderType::Rounded
-                    })
-                    .border_style(Style::default().fg(if history_focused {
-                        Color::LightCyan
-                    } else {
-                        Color::Cyan
-                    }))
-                    .padding(Padding::new(1, 1, 0, 0))
-                    .title_style(Style::default().fg(Color::Cyan).bold())
-                    .title("History"),
-            );
-        frame.render_stateful_widget(results, layout[0], &mut self.history_state);
+        let variable_list = render_variable_block(&self.variables, self.focus);
+        frame.render_stateful_widget(variable_list, left_pane, &mut self.variables_state);
 
-        let mut sorted_variables: Vec<(&String, &VariableEntry)> = self.variables.iter().collect();
-        sorted_variables.sort_by(|(ka, _), (kb, _)| ka.cmp(kb));
-
-        let variable_items: Vec<ListItem> = sorted_variables
-            .into_iter()
-            .map(|(k, v)| {
-                let content = Line::from(vec![
-                    Span::styled(format!("{} = ", k), Style::default().bold()),
-                    Span::styled(v.value.to_string(), Style::default().bold().green()),
-                ]);
-                ListItem::new(content)
-            })
-            .collect();
-
-        let variables_focused = matches!(self.focus, Focus::Variables);
-        let variables = List::new(variable_items)
-            .highlight_style(Style::default().bg(Color::DarkGray).bold())
-            .highlight_symbol("› ")
-            .block(
-                Block::bordered()
-                    .border_type(if variables_focused {
-                        BorderType::Thick
-                    } else {
-                        BorderType::Rounded
-                    })
-                    .border_style(Style::default().fg(if variables_focused {
-                        Color::LightYellow
-                    } else {
-                        Color::Yellow
-                    }))
-                    .padding(Padding::new(1, 1, 0, 0))
-                    .title_style(Style::default().fg(Color::Yellow).bold())
-                    .title("Variables"),
-            );
-        frame.render_stateful_widget(variables, layout[1], &mut self.variables_state);
+        if let Some(plot_data) = &self.plot_data
+            && let Some(pane) = right_layout.get(1)
+            && let Some(last) = self.history.last()
+        {
+            let chart = render_scatter(plot_data, last.expression.clone());
+            frame.render_widget(chart, *pane);
+        }
     }
 }
 
