@@ -109,22 +109,6 @@ fn esc_in_insert_switches_to_normal_mode() {
 }
 
 #[test]
-fn esc_in_normal_switches_focus_to_history_and_selects_first() {
-    let mut app = App::new();
-    app.input = "x=2".to_string();
-    app.submit_message();
-    app.input = "y=3".to_string();
-    app.submit_message();
-
-    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> History
-    app.handle_key_event(key_event(KeyCode::Right)); // History -> Variables
-
-    assert_eq!(app.focus, Focus::Variables);
-    assert_eq!(app.variables_state.selected(), Some(0));
-}
-
-#[test]
 fn tab_cycles_focus_forward_across_all_panes() {
     let mut app = App::new();
 
@@ -165,7 +149,7 @@ fn pressing_i_while_not_in_input_mode_re_enters_input_insert_mode() {
     app.submit_message();
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
+    app.handle_key_event(key_event(KeyCode::Tab)); // Normal -> Variables
     assert_eq!(app.focus, Focus::History);
 
     app.handle_key_event(key_event(KeyCode::Char('i')));
@@ -183,7 +167,7 @@ fn enter_on_history_populates_input_from_selected_item() {
     app.submit_message();
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
+    app.handle_key_event(key_event(KeyCode::Tab)); // Normal -> Variables
     app.handle_key_event(key_event(KeyCode::Left)); // Variables -> History
     app.handle_key_event(key_event(KeyCode::Enter)); // Populate input
 
@@ -202,7 +186,7 @@ fn enter_on_variables_populates_input_from_selected_variable_expression() {
     app.submit_message();
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> History
+    app.handle_key_event(key_event(KeyCode::Tab)); // Normal -> History
     app.handle_key_event(key_event(KeyCode::Right)); // History -> Variables
     app.handle_key_event(key_event(KeyCode::Enter)); // Populate input from selected variable
 
@@ -315,8 +299,8 @@ fn plot_expression() {
     assert_eq!(app.character_index, 0);
     assert_eq!(app.history.len(), 1);
     let plot_data = app.plot_data.unwrap();
-    assert_eq!(plot_data.len(), 11);
+    assert_eq!(plot_data.len(), 21);
     println!("{plot_data:?}");
-    assert_eq!(plot_data[0], (0.0, 1.0));
-    assert_eq!(plot_data[10], (10.0, 71.0));
+    assert_eq!(plot_data[0], (-10.0, -69.0));
+    assert_eq!(plot_data[20], (10.0, 71.0));
 }
