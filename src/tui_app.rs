@@ -3,12 +3,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::calculate::calculate;
 pub use crate::input_editor::InputEditMode;
-use crate::input_editor::{EditorCommand, InputEditor, Motion};
 use crate::tokenize::tokenize;
 use crate::types::VariableEntry;
 use crate::variables::parse_variables;
+use crate::{calculate::calculate, inspect::inspect_unknown_variables};
+use crate::{
+    input_editor::{EditorCommand, InputEditor, Motion},
+    plot::render_scatter,
+};
 use color_eyre::Result;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
@@ -22,6 +25,7 @@ use ratatui::{
     widgets::{Block, List, ListItem, ListState, Padding, Paragraph},
 };
 
+#[derive(Debug, Clone)]
 pub struct History {
     pub expression: String,
     pub result: Option<f64>,
@@ -33,7 +37,7 @@ impl std::fmt::Display for History {
         match (self.result, self.error.clone()) {
             (Some(result), _) => write!(f, "{} = {}", self.expression, result),
             (_, Some(error)) => write!(f, "'{}' resulted in error: {}", self.expression, error),
-            _ => panic!("Either provide an error or a result"),
+            (_, _) => write!(f, "{} 📈", self.expression),
         }
     }
 }
@@ -66,6 +70,7 @@ pub struct App {
     pub input_edit_mode: InputEditMode,
     pub history_state: ListState,
     pub variables_state: ListState,
+    pub plot_data: Option<Vec<(f64, f64)>>,
     editor: InputEditor,
     editor_needs_sync: bool,
     yank_flash: Option<YankFlash>,
@@ -84,6 +89,7 @@ impl App {
             input_edit_mode: editor.mode(),
             history_state: ListState::default(),
             variables_state: ListState::default(),
+            plot_data: None,
             editor,
             editor_needs_sync: false,
             yank_flash: None,
@@ -346,6 +352,45 @@ impl App {
             }
         }
 
+        let unknown_variables = inspect_unknown_variables(&tokenized, &self.variables);
+        if !unknown_variables.is_empty() {
+            if unknown_variables.len() == 1 {
+                let mut plot_data: Vec<(f64, f64)> = Vec::new();
+                let mut cloned_variables = self.variables.clone();
+                for i in 0..10 {
+                    cloned_variables.insert(
+                        unknown_variables[0].to_string(),
+                        VariableEntry {
+                            expression: "".to_string(),
+                            value: i as f64,
+                        },
+                    );
+                    let value = calculate(tokenized.clone(), &cloned_variables).unwrap_or_default();
+                    plot_data.push((i as f64, value));
+                }
+                self.plot_data = Some(plot_data);
+                self.history.push(History {
+                    expression: self.input.clone(),
+                    result: None,
+                    error: None,
+                });
+                self.input.clear();
+                self.reset_cursor();
+                return;
+            }
+
+            self.history.push(History {
+                expression: self.input.clone(),
+                result: None,
+                error: Some(format!(
+                    "Unknown variables: {}",
+                    unknown_variables.join(", ")
+                )),
+            });
+            self.input.clear();
+            self.reset_cursor();
+            return;
+        }
         let res = calculate(tokenized, &self.variables);
         match res {
             Ok(result) => {
@@ -598,14 +643,26 @@ impl App {
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(messages_area);
+        let right_pane = layout[0];
+        let left_pane = layout[1];
+        let mut right_layout_constraints = vec![Constraint::Percentage(100)];
+        if let Some(plot_data) = self.plot_data.as_ref()
+            && plot_data.len() == 1
+        {
+            right_layout_constraints = vec![Constraint::Percentage(50), Constraint::Percentage(50)];
+        }
+        let right_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(right_layout_constraints)
+            .split(right_pane);
 
         let results: Vec<ListItem> = self
             .history
             .iter()
             .enumerate()
             .rev()
-            .map(|(i, m)| match m.result {
-                Some(result) => {
+            .map(|(i, m)| match (m.result, &m.error) {
+                (Some(result), _) => {
                     let content = Line::from(vec![
                         Span::styled(format!("{} ", i + 1), Style::default().dim()),
                         Span::styled(m.expression.clone(), Style::default().blue()),
@@ -614,10 +671,17 @@ impl App {
                     ]);
                     ListItem::new(content)
                 }
-                _ => {
+                (_, Some(_)) => {
                     let content = Line::from(vec![
                         Span::raw(format!("{}: ", i + 1)),
                         Span::styled(format!("{m}"), Style::default().red().bold()),
+                    ]);
+                    ListItem::new(content)
+                }
+                (_, _) => {
+                    let content = Line::from(vec![
+                        Span::raw(format!("{}: ", i + 1)),
+                        Span::styled(format!("{m}"), Style::default().magenta().bold()),
                     ]);
                     ListItem::new(content)
                 }
@@ -644,7 +708,7 @@ impl App {
                     .title_style(Style::default().fg(Color::Cyan).bold())
                     .title("History"),
             );
-        frame.render_stateful_widget(results, layout[0], &mut self.history_state);
+        frame.render_stateful_widget(results, right_layout[0], &mut self.history_state);
 
         let mut sorted_variables: Vec<(&String, &VariableEntry)> = self.variables.iter().collect();
         sorted_variables.sort_by(|(ka, _), (kb, _)| ka.cmp(kb));
@@ -680,7 +744,13 @@ impl App {
                     .title_style(Style::default().fg(Color::Yellow).bold())
                     .title("Variables"),
             );
-        frame.render_stateful_widget(variables, layout[1], &mut self.variables_state);
+        frame.render_stateful_widget(variables, left_pane, &mut self.variables_state);
+
+        if let Some(plot_data) = &self.plot_data
+            && let Some(pane) = right_layout.get(1)
+        {
+            render_scatter(frame, *pane, plot_data);
+        }
     }
 }
 

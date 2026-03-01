@@ -73,7 +73,10 @@ fn submit_message_records_error_and_clears_input() {
     assert_eq!(app.history.len(), 1);
     assert_eq!(app.history[0].expression, "asdf");
     assert_eq!(app.history[0].result, None);
-    assert_eq!(app.history[0].error.as_deref(), Some("Unknown variable: a"));
+    assert_eq!(
+        app.history[0].error.as_deref(),
+        Some("Unknown variables: a, s, d, f")
+    );
 }
 
 #[test]
@@ -264,4 +267,22 @@ fn save_variable() {
         "x=2".to_string()
     );
     assert_eq!(app.variables.get("x").unwrap().value, 2.0);
+}
+
+#[test]
+fn plot_expression() {
+    let mut app = App::new();
+    app.input = "7x+1".to_string();
+    app.character_index = 4;
+
+    app.submit_message();
+
+    assert_eq!(app.input, "");
+    assert_eq!(app.character_index, 0);
+    assert_eq!(app.history.len(), 1);
+    let plot_data = app.plot_data.unwrap();
+    assert_eq!(plot_data.len(), 10);
+    println!("{plot_data:?}");
+    assert_eq!(plot_data[0], (0.0, 1.0));
+    assert_eq!(plot_data[9], (9.0, 64.0));
 }
