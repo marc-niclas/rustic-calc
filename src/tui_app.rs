@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::calculate::calculate;
 use crate::tokenize::tokenize;
+use crate::types::VariableEntry;
 use crate::variables::parse_variables;
 use color_eyre::Result;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -13,7 +14,7 @@ use ratatui::{
     layout::{Constraint, Layout, Position},
     style::{Color, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, List, ListItem, Padding, Paragraph},
+    widgets::{Block, List, ListItem, ListState, Padding, Paragraph},
 };
 
 pub struct History {
@@ -32,6 +33,13 @@ impl std::fmt::Display for History {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Focus {
+    Input,
+    History,
+    Variables,
+}
+
 /// App holds the state of the application
 pub struct App {
     /// Current value of the input box
@@ -41,8 +49,11 @@ pub struct App {
     /// History of recorded messages
     pub history: Vec<History>,
     /// Variables stored in the calculator
-    pub variables: HashMap<String, f64>,
+    pub variables: HashMap<String, VariableEntry>,
     pub input_mode: bool,
+    pub focus: Focus,
+    pub history_state: ListState,
+    pub variables_state: ListState,
 }
 
 impl App {
@@ -53,6 +64,9 @@ impl App {
             character_index: 0,
             variables: HashMap::new(),
             input_mode: true,
+            focus: Focus::Input,
+            history_state: ListState::default(),
+            variables_state: ListState::default(),
         }
     }
 
@@ -114,7 +128,127 @@ impl App {
         self.character_index = 0;
     }
 
+    fn set_focus(&mut self, focus: Focus) {
+        self.focus = focus;
+        self.input_mode = matches!(self.focus, Focus::Input);
+
+        match self.focus {
+            Focus::Input => {}
+            Focus::History => self.select_first_history_if_available(),
+            Focus::Variables => self.select_first_variable_if_available(),
+        }
+    }
+
+    fn select_first_history_if_available(&mut self) {
+        if self.history.is_empty() {
+            self.history_state.select(None);
+        } else if self.history_state.selected().is_none() {
+            self.history_state.select(Some(0));
+        }
+    }
+
+    fn select_first_variable_if_available(&mut self) {
+        if self.variables.is_empty() {
+            self.variables_state.select(None);
+        } else if self.variables_state.selected().is_none() {
+            self.variables_state.select(Some(0));
+        }
+    }
+
+    fn move_history_selection_up(&mut self) {
+        let len = self.history.len();
+        if len == 0 {
+            self.history_state.select(None);
+            return;
+        }
+
+        let next = match self.history_state.selected() {
+            Some(i) => i.saturating_sub(1),
+            None => 0,
+        };
+        self.history_state.select(Some(next));
+    }
+
+    fn move_history_selection_down(&mut self) {
+        let len = self.history.len();
+        if len == 0 {
+            self.history_state.select(None);
+            return;
+        }
+
+        let next = match self.history_state.selected() {
+            Some(i) => (i + 1).min(len - 1),
+            None => 0,
+        };
+        self.history_state.select(Some(next));
+    }
+
+    fn sorted_variable_keys(&self) -> Vec<String> {
+        let mut keys: Vec<String> = self.variables.keys().cloned().collect();
+        keys.sort();
+        keys
+    }
+
+    fn move_variables_selection_up(&mut self) {
+        let len = self.sorted_variable_keys().len();
+        if len == 0 {
+            self.variables_state.select(None);
+            return;
+        }
+
+        let next = match self.variables_state.selected() {
+            Some(i) => i.saturating_sub(1),
+            None => 0,
+        };
+        self.variables_state.select(Some(next));
+    }
+
+    fn move_variables_selection_down(&mut self) {
+        let len = self.sorted_variable_keys().len();
+        if len == 0 {
+            self.variables_state.select(None);
+            return;
+        }
+
+        let next = match self.variables_state.selected() {
+            Some(i) => (i + 1).min(len - 1),
+            None => 0,
+        };
+        self.variables_state.select(Some(next));
+    }
+
+    fn populate_input_from_history(&mut self) {
+        let len = self.history.len();
+        if len == 0 {
+            return;
+        }
+
+        if let Some(selected_visual_idx) = self.history_state.selected()
+            && selected_visual_idx < len
+        {
+            let history_idx = len - 1 - selected_visual_idx;
+            self.input = self.history[history_idx].expression.clone();
+            self.character_index = self.input.chars().count();
+            self.set_focus(Focus::Input);
+        }
+    }
+
+    fn populate_input_from_variable(&mut self) {
+        let keys = self.sorted_variable_keys();
+        if let Some(selected_idx) = self.variables_state.selected()
+            && let Some(key) = keys.get(selected_idx)
+            && let Some(entry) = self.variables.get(key)
+        {
+            self.input = entry.expression.clone();
+            self.character_index = self.input.chars().count();
+            self.set_focus(Focus::Input);
+        }
+    }
+
     pub fn submit_message(&mut self) {
+        if self.input.is_empty() {
+            return;
+        }
         let mut tokenized = tokenize(&self.input);
         let mut var_name: Option<String> = None;
         if tokenized.contains(&"=") {
@@ -138,7 +272,20 @@ impl App {
         match res {
             Ok(result) => {
                 if let Some(var_name) = var_name {
-                    self.variables.insert(var_name.to_string(), result);
+                    println!("expression {}", self.input.clone());
+                    self.variables.insert(
+                        var_name.to_string(),
+                        VariableEntry {
+                            expression: self.input.clone(),
+                            value: result,
+                        },
+                    );
+                } else {
+                    self.history.push(History {
+                        expression: self.input.clone(),
+                        result: Some(result),
+                        error: None,
+                    });
                 }
             }
             Err(err) => {
@@ -151,40 +298,79 @@ impl App {
         }
         self.input.clear();
         self.reset_cursor();
+        self.set_focus(Focus::Input);
     }
 
     pub fn handle_key_event(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => true,
+            KeyCode::Tab => false,
+            KeyCode::BackTab => false,
             KeyCode::Enter => {
-                self.submit_message();
+                match self.focus {
+                    Focus::Input => self.submit_message(),
+                    Focus::History => self.populate_input_from_history(),
+                    Focus::Variables => self.populate_input_from_variable(),
+                }
+                false
+            }
+            KeyCode::Char('i') if !matches!(self.focus, Focus::Input) => {
+                self.set_focus(Focus::Input);
                 false
             }
             KeyCode::Char(to_insert) => {
-                self.enter_char(to_insert);
+                if matches!(self.focus, Focus::Input) {
+                    self.enter_char(to_insert);
+                }
                 false
             }
             KeyCode::Backspace => {
-                self.delete_char();
+                if matches!(self.focus, Focus::Input) {
+                    self.delete_char();
+                }
                 false
             }
             KeyCode::Left => {
-                self.move_cursor_left();
+                if matches!(self.focus, Focus::Input) {
+                    self.move_cursor_left();
+                } else {
+                    self.set_focus(Focus::History);
+                }
                 false
             }
             KeyCode::Right => {
-                self.move_cursor_right();
+                if matches!(self.focus, Focus::Input) {
+                    self.move_cursor_right();
+                } else {
+                    self.set_focus(Focus::Variables);
+                }
                 false
             }
             KeyCode::Up => {
-                if let Some(last) = self.history.last() {
-                    self.input = last.expression.clone();
-                    self.character_index = self.input.len();
+                match self.focus {
+                    Focus::Input => {
+                        if let Some(last) = self.history.last() {
+                            self.input = last.expression.clone();
+                            self.character_index = self.input.chars().count();
+                        }
+                    }
+                    Focus::History => self.move_history_selection_up(),
+                    Focus::Variables => self.move_variables_selection_up(),
+                }
+                false
+            }
+            KeyCode::Down => {
+                match self.focus {
+                    Focus::Input => {}
+                    Focus::History => self.move_history_selection_down(),
+                    Focus::Variables => self.move_variables_selection_down(),
                 }
                 false
             }
             KeyCode::Esc => {
-                self.input_mode = false;
+                if matches!(self.focus, Focus::Input) {
+                    self.set_focus(Focus::History);
+                }
                 false
             }
             _ => false,
@@ -204,7 +390,7 @@ impl App {
         }
     }
 
-    fn draw(&self, frame: &mut Frame) {
+    fn draw(&mut self, frame: &mut Frame) {
         let vertical = Layout::vertical([
             Constraint::Length(1),
             Constraint::Length(3),
@@ -220,15 +406,21 @@ impl App {
         let help_message = Paragraph::new(text);
         frame.render_widget(help_message, help_area);
 
-        let caret = if self.input_mode { "❯" } else { "❮" };
+        let caret = if matches!(self.focus, Focus::Input) {
+            "❯"
+        } else {
+            "❮"
+        };
         let input = Paragraph::new(format!("{} {}", caret, self.input))
             .style(Style::new().bg(Color::DarkGray))
             .block(Block::new().padding(Padding::vertical(1)));
         frame.render_widget(input, input_area);
-        frame.set_cursor_position(Position::new(
-            input_area.x + self.character_index as u16 + 2,
-            input_area.y + 1,
-        ));
+        if matches!(self.focus, Focus::Input) {
+            frame.set_cursor_position(Position::new(
+                input_area.x + self.character_index as u16 + 2,
+                input_area.y + 1,
+            ));
+        }
 
         let layout = Layout::default()
             .direction(Direction::Horizontal)
@@ -243,7 +435,7 @@ impl App {
             .map(|(i, m)| match m.result {
                 Some(result) => {
                     let content = Line::from(vec![
-                        Span::raw(format!("{}: ", i + 1)),
+                        Span::styled(format!("{} ", i + 1), Style::default().dim()),
                         Span::styled(m.expression.clone(), Style::default().blue()),
                         Span::raw(" = "),
                         Span::styled(result.to_string(), Style::default().bold().green()),
@@ -259,34 +451,62 @@ impl App {
                 }
             })
             .collect();
-        let results = List::new(results).block(
-            Block::bordered()
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Cyan))
-                .title_style(Style::default().fg(Color::Cyan).bold())
-                .title("History"),
-        );
-        frame.render_widget(results, layout[0]);
+        let history_focused = matches!(self.focus, Focus::History);
+        let results = List::new(results)
+            .highlight_style(Style::default().bg(Color::DarkGray).bold())
+            .highlight_symbol("› ")
+            .block(
+                Block::bordered()
+                    .border_type(if history_focused {
+                        BorderType::Thick
+                    } else {
+                        BorderType::Rounded
+                    })
+                    .border_style(Style::default().fg(if history_focused {
+                        Color::LightCyan
+                    } else {
+                        Color::Cyan
+                    }))
+                    .padding(Padding::new(1, 1, 0, 0))
+                    .title_style(Style::default().fg(Color::Cyan).bold())
+                    .title("History"),
+            );
+        frame.render_stateful_widget(results, layout[0], &mut self.history_state);
 
-        let variable_items: Vec<ListItem> = self
-            .variables
-            .iter()
+        let mut sorted_variables: Vec<(&String, &VariableEntry)> = self.variables.iter().collect();
+        sorted_variables.sort_by(|(ka, _), (kb, _)| ka.cmp(kb));
+
+        let variable_items: Vec<ListItem> = sorted_variables
+            .into_iter()
             .map(|(k, v)| {
                 let content = Line::from(vec![
                     Span::styled(format!("{} = ", k), Style::default().bold()),
-                    Span::styled(v.to_string(), Style::default().bold().green()),
+                    Span::styled(v.value.to_string(), Style::default().bold().green()),
                 ]);
                 ListItem::new(content)
             })
             .collect();
-        let variables = List::new(variable_items).block(
-            Block::bordered()
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Yellow))
-                .title_style(Style::default().fg(Color::Yellow).bold())
-                .title("Variables"),
-        );
-        frame.render_widget(variables, layout[1]);
+        let variables_focused = matches!(self.focus, Focus::Variables);
+        let variables = List::new(variable_items)
+            .highlight_style(Style::default().bg(Color::DarkGray).bold())
+            .highlight_symbol("› ")
+            .block(
+                Block::bordered()
+                    .border_type(if variables_focused {
+                        BorderType::Thick
+                    } else {
+                        BorderType::Rounded
+                    })
+                    .border_style(Style::default().fg(if variables_focused {
+                        Color::LightYellow
+                    } else {
+                        Color::Yellow
+                    }))
+                    .padding(Padding::new(1, 1, 0, 0))
+                    .title_style(Style::default().fg(Color::Yellow).bold())
+                    .title("Variables"),
+            );
+        frame.render_stateful_widget(variables, layout[1], &mut self.variables_state);
     }
 }
 

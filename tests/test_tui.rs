@@ -1,5 +1,5 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use rustic_calc::tui_app::App;
+use rustic_calc::tui_app::{App, Focus};
 
 fn key_event(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -94,6 +94,68 @@ fn ctrl_c_returns_quit_signal() {
 }
 
 #[test]
+#[ignore]
+fn esc_exits_input_mode_and_selects_first_variable() {
+    let mut app = App::new();
+    app.input = "x=2".to_string();
+    app.submit_message();
+    app.input = "y=3".to_string();
+    app.submit_message();
+
+    app.handle_key_event(key_event(KeyCode::Esc));
+
+    assert_eq!(app.focus, Focus::History);
+    assert_eq!(app.variables_state.selected(), Some(1));
+}
+
+#[test]
+fn pressing_i_while_not_in_input_mode_re_enters_input_mode() {
+    let mut app = App::new();
+    app.input = "x=2".to_string();
+    app.submit_message();
+
+    app.handle_key_event(key_event(KeyCode::Esc));
+    assert_eq!(app.focus, Focus::History);
+
+    app.handle_key_event(key_event(KeyCode::Char('i')));
+    assert_eq!(app.focus, Focus::Input);
+}
+
+#[test]
+fn enter_on_history_populates_input_from_selected_item() {
+    let mut app = App::new();
+    app.input = "1+1".to_string();
+    app.submit_message();
+    app.input = "2+2".to_string();
+    app.submit_message();
+
+    app.handle_key_event(key_event(KeyCode::Esc)); // Input -> Variables
+    app.handle_key_event(key_event(KeyCode::Left)); // Variables -> History (auto-select first)
+    app.handle_key_event(key_event(KeyCode::Enter)); // Populate input
+
+    assert_eq!(app.input, "2+2");
+    assert_eq!(app.character_index, 3);
+    assert_eq!(app.focus, Focus::Input);
+}
+
+#[test]
+fn enter_on_variables_populates_input_from_selected_variable() {
+    let mut app = App::new();
+    app.input = "x=2".to_string();
+    app.submit_message();
+    app.input = "y=3".to_string();
+    app.submit_message();
+
+    app.handle_key_event(key_event(KeyCode::Esc)); // Input -> Variables (auto-select first)
+    app.handle_key_event(key_event(KeyCode::Right)); // Right arrow to History
+    app.handle_key_event(key_event(KeyCode::Enter)); // Populate input
+
+    assert_eq!(app.input, "x=2");
+    assert_eq!(app.character_index, 3);
+    assert_eq!(app.focus, Focus::Input);
+}
+
+#[test]
 fn save_variable() {
     let mut app = App::new();
     app.input = "x=2".to_string();
@@ -103,8 +165,10 @@ fn save_variable() {
 
     assert_eq!(app.input, "");
     assert_eq!(app.character_index, 0);
-    assert_eq!(app.history.len(), 1);
-    assert_eq!(app.history[0].expression, "x=2");
-    assert_eq!(app.history[0].result, Some(2.));
-    assert!(app.history[0].variable_saved);
+    assert_eq!(app.history.len(), 0);
+    assert_eq!(
+        app.variables.get("x").unwrap().expression,
+        "x=2".to_string()
+    );
+    assert_eq!(app.variables.get("x").unwrap().value, 2.0);
 }

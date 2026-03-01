@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-pub fn calculate(tokens: Vec<&str>, variables: &HashMap<String, f64>) -> Result<f64, String> {
+use crate::types::VariableEntry;
+
+pub fn calculate(
+    tokens: Vec<&str>,
+    variables: &HashMap<String, VariableEntry>,
+) -> Result<f64, String> {
     let precedence_map: HashMap<String, i32> = HashMap::from([
         ("^".to_string(), 3),
         ("*".to_string(), 2),
@@ -18,7 +23,7 @@ pub fn calculate(tokens: Vec<&str>, variables: &HashMap<String, f64>) -> Result<
             Err(_) => {
                 if !precedence_map.keys().any(|k| k == t) {
                     if let Some(var) = variables.get(*t) {
-                        values.push(*var);
+                        values.push(var.value);
                     } else {
                         return Err(format!("Unknown variable: {}", t));
                     }
