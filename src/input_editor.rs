@@ -12,6 +12,8 @@ pub enum EditorCommand {
     None,
     Submit,
     ExitInputMode,
+    IncrementFocus,
+    DecrementFocus,
     Yanked { start: usize, end: usize },
 }
 
@@ -358,6 +360,8 @@ impl InputEditor {
         match code {
             KeyCode::Esc => EditorCommand::ExitInputMode,
             KeyCode::Enter => EditorCommand::Submit,
+            KeyCode::Tab => EditorCommand::IncrementFocus,
+            KeyCode::BackTab => EditorCommand::DecrementFocus,
 
             KeyCode::Char('i') => {
                 self.switch_to_insert_mode();

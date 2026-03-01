@@ -49,6 +49,24 @@ pub enum Focus {
     Variables,
 }
 
+impl Focus {
+    pub fn next(self) -> Self {
+        match self {
+            Focus::Input => Focus::History,
+            Focus::History => Focus::Variables,
+            Focus::Variables => Focus::Input, // wrap
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        match self {
+            Focus::Input => Focus::Variables, // wrap
+            Focus::History => Focus::Input,
+            Focus::Variables => Focus::History,
+        }
+    }
+}
+
 struct YankFlash {
     start: usize,
     end: usize,
@@ -451,6 +469,14 @@ impl App {
                 self.set_focus(Focus::History);
                 false
             }
+            EditorCommand::IncrementFocus => {
+                self.set_focus(self.focus.next());
+                false
+            }
+            EditorCommand::DecrementFocus => {
+                self.set_focus(self.focus.prev());
+                false
+            }
             EditorCommand::Yanked { start, end } => {
                 self.sync_public_from_editor();
                 self.yank_flash = Some(YankFlash {
@@ -476,6 +502,14 @@ impl App {
             KeyCode::Char('i') => {
                 self.set_focus(Focus::Input);
                 self.set_input_edit_mode(InputEditMode::Insert);
+                false
+            }
+            KeyCode::Tab => {
+                self.set_focus(self.focus.next());
+                false
+            }
+            KeyCode::BackTab => {
+                self.set_focus(self.focus.prev());
                 false
             }
             KeyCode::Left => {
@@ -563,9 +597,13 @@ impl App {
                     InputEditMode::Normal | InputEditMode::Visual => Style::default().bold().blue(),
                 },
             ),
-            Span::raw(
-                "Enter: submit/select • Esc: mode/focus • i: input • v: visual • y: yank • d/x: delete • p/P: paste",
-            ),
+            Span::raw(match self.focus {
+                Focus::Input => {
+                    "Enter: submit/select • Esc: mode/focus • i: input • v: visual • y: yank • d/x: delete • p/P: paste"
+                }
+                Focus::History => "Enter: select • Esc: mode/focus • d/x: delete",
+                Focus::Variables => "Enter: select • Esc: mode/focus • d/x: delete",
+            }),
         ]);
         let help_message = Paragraph::new(Text::from(help_line));
         frame.render_widget(help_message, help_area);

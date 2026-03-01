@@ -125,6 +125,40 @@ fn esc_in_normal_switches_focus_to_history_and_selects_first() {
 }
 
 #[test]
+fn tab_cycles_focus_forward_across_all_panes() {
+    let mut app = App::new();
+
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal (Input focused)
+    assert_eq!(app.focus, Focus::Input);
+
+    app.handle_key_event(key_event(KeyCode::Tab)); // Input -> History
+    assert_eq!(app.focus, Focus::History);
+
+    app.handle_key_event(key_event(KeyCode::Tab)); // History -> Variables
+    assert_eq!(app.focus, Focus::Variables);
+
+    app.handle_key_event(key_event(KeyCode::Tab)); // Variables -> Input
+    assert_eq!(app.focus, Focus::Input);
+}
+
+#[test]
+fn backtab_cycles_focus_backward_across_all_panes() {
+    let mut app = App::new();
+
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal (Input focused)
+    assert_eq!(app.focus, Focus::Input);
+
+    app.handle_key_event(key_event(KeyCode::BackTab)); // Input -> Variables
+    assert_eq!(app.focus, Focus::Variables);
+
+    app.handle_key_event(key_event(KeyCode::BackTab)); // Variables -> History
+    assert_eq!(app.focus, Focus::History);
+
+    app.handle_key_event(key_event(KeyCode::BackTab)); // History -> Input
+    assert_eq!(app.focus, Focus::Input);
+}
+
+#[test]
 fn pressing_i_while_not_in_input_mode_re_enters_input_insert_mode() {
     let mut app = App::new();
     app.input = "x=2".to_string();
@@ -281,8 +315,8 @@ fn plot_expression() {
     assert_eq!(app.character_index, 0);
     assert_eq!(app.history.len(), 1);
     let plot_data = app.plot_data.unwrap();
-    assert_eq!(plot_data.len(), 10);
+    assert_eq!(plot_data.len(), 11);
     println!("{plot_data:?}");
     assert_eq!(plot_data[0], (0.0, 1.0));
-    assert_eq!(plot_data[9], (9.0, 64.0));
+    assert_eq!(plot_data[10], (10.0, 71.0));
 }

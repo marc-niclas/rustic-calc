@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Style},
     symbols::Marker,
-    widgets::{Axis, Block, BorderType, Chart, Dataset, GraphType, Padding},
+    widgets::{Axis, Block, BorderType, Chart, Dataset, GraphType, LegendPosition},
 };
 
 pub fn render_scatter(frame: &mut Frame, area: Rect, data: &[(f64, f64)], name: String) {
@@ -24,8 +24,8 @@ pub fn render_scatter(frame: &mut Frame, area: Rect, data: &[(f64, f64)], name: 
             Block::bordered()
                 .title("Scatter Chart")
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Magenta))
-                .padding(Padding::uniform(1)),
+                .border_style(Style::default().fg(Color::Magenta)),
+            // .padding(Padding::uniform(1)),
         )
         .x_axis(
             Axis::default()
@@ -41,6 +41,7 @@ pub fn render_scatter(frame: &mut Frame, area: Rect, data: &[(f64, f64)], name: 
                 .style(Style::default().fg(Color::Gray))
                 .labels(y_labels),
         )
+        .legend_position(Some(LegendPosition::Bottom))
         .hidden_legend_constraints((Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)));
 
     frame.render_widget(chart, area);
@@ -60,9 +61,9 @@ fn min_max_xy(data: &[(f64, f64)]) -> Option<(f64, f64, f64, f64)> {
 
 fn generate_labels(min: f64, max: f64) -> Vec<String> {
     let delta = max - min;
-    let step = delta / 5.0;
+    let step = delta / 10.;
     let mut labels = Vec::new();
-    for i in 0..6 {
+    for i in 0..11 {
         let x = min + step * i as f64;
         labels.push(format!("{:.1}", x));
     }
