@@ -403,7 +403,7 @@ impl App {
             }
             EditorCommand::ExitInputMode => {
                 self.sync_public_from_editor();
-                self.set_focus(Focus::Variables);
+                self.set_focus(Focus::History);
                 false
             }
             EditorCommand::Yanked { start, end } => {
