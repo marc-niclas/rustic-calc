@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.3.0 (2026-03-01)
+
+### Features
+
+- Add plots ([#4](https://github.com/marc-niclas/rustic-calc/pull/4),
+  [`7731d47`](https://github.com/marc-niclas/rustic-calc/commit/7731d479bd039fe9d5b3ec79dd8344ae05315dea))
+
+
 ## v0.2.0 (2026-03-01)
 
 ### Features
