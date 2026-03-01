@@ -106,7 +106,7 @@ fn esc_in_insert_switches_to_normal_mode() {
 }
 
 #[test]
-fn esc_in_normal_switches_focus_to_variables_and_selects_first() {
+fn esc_in_normal_switches_focus_to_history_and_selects_first() {
     let mut app = App::new();
     app.input = "x=2".to_string();
     app.submit_message();
@@ -114,7 +114,8 @@ fn esc_in_normal_switches_focus_to_variables_and_selects_first() {
     app.submit_message();
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
+    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> History
+    app.handle_key_event(key_event(KeyCode::Right)); // History -> Variables
 
     assert_eq!(app.focus, Focus::Variables);
     assert_eq!(app.variables_state.selected(), Some(0));
@@ -128,7 +129,7 @@ fn pressing_i_while_not_in_input_mode_re_enters_input_insert_mode() {
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
     app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
-    assert_eq!(app.focus, Focus::Variables);
+    assert_eq!(app.focus, Focus::History);
 
     app.handle_key_event(key_event(KeyCode::Char('i')));
 
@@ -164,7 +165,8 @@ fn enter_on_variables_populates_input_from_selected_variable_expression() {
     app.submit_message();
 
     app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
-    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
+    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> History
+    app.handle_key_event(key_event(KeyCode::Right)); // History -> Variables
     app.handle_key_event(key_event(KeyCode::Enter)); // Populate input from selected variable
 
     assert_eq!(app.input, "x=2");
