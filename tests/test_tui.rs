@@ -1,5 +1,5 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use rustic_calc::tui_app::{App, Focus};
+use rustic_calc::tui_app::{App, Focus, InputEditMode};
 
 fn key_event(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -11,6 +11,8 @@ fn app_starts_with_empty_state() {
     assert_eq!(app.input, "");
     assert_eq!(app.character_index, 0);
     assert!(app.history.is_empty());
+    assert_eq!(app.focus, Focus::Input);
+    assert_eq!(app.input_edit_mode, InputEditMode::Insert);
 }
 
 #[test]
@@ -75,7 +77,7 @@ fn submit_message_records_error_and_clears_input() {
 }
 
 #[test]
-fn up_arrow_recalls_last_expression() {
+fn up_arrow_recalls_last_expression_in_insert_mode() {
     let mut app = App::new();
     app.input = "1+1".to_string();
     app.submit_message();
@@ -94,31 +96,44 @@ fn ctrl_c_returns_quit_signal() {
 }
 
 #[test]
-#[ignore]
-fn esc_exits_input_mode_and_selects_first_variable() {
+fn esc_in_insert_switches_to_normal_mode() {
+    let mut app = App::new();
+
+    app.handle_key_event(key_event(KeyCode::Esc));
+
+    assert_eq!(app.focus, Focus::Input);
+    assert_eq!(app.input_edit_mode, InputEditMode::Normal);
+}
+
+#[test]
+fn esc_in_normal_switches_focus_to_variables_and_selects_first() {
     let mut app = App::new();
     app.input = "x=2".to_string();
     app.submit_message();
     app.input = "y=3".to_string();
     app.submit_message();
 
-    app.handle_key_event(key_event(KeyCode::Esc));
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
+    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
 
-    assert_eq!(app.focus, Focus::History);
-    assert_eq!(app.variables_state.selected(), Some(1));
+    assert_eq!(app.focus, Focus::Variables);
+    assert_eq!(app.variables_state.selected(), Some(0));
 }
 
 #[test]
-fn pressing_i_while_not_in_input_mode_re_enters_input_mode() {
+fn pressing_i_while_not_in_input_mode_re_enters_input_insert_mode() {
     let mut app = App::new();
     app.input = "x=2".to_string();
     app.submit_message();
 
-    app.handle_key_event(key_event(KeyCode::Esc));
-    assert_eq!(app.focus, Focus::History);
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
+    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
+    assert_eq!(app.focus, Focus::Variables);
 
     app.handle_key_event(key_event(KeyCode::Char('i')));
+
     assert_eq!(app.focus, Focus::Input);
+    assert_eq!(app.input_edit_mode, InputEditMode::Insert);
 }
 
 #[test]
@@ -129,30 +144,69 @@ fn enter_on_history_populates_input_from_selected_item() {
     app.input = "2+2".to_string();
     app.submit_message();
 
-    app.handle_key_event(key_event(KeyCode::Esc)); // Input -> Variables
-    app.handle_key_event(key_event(KeyCode::Left)); // Variables -> History (auto-select first)
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
+    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
+    app.handle_key_event(key_event(KeyCode::Left)); // Variables -> History
     app.handle_key_event(key_event(KeyCode::Enter)); // Populate input
 
     assert_eq!(app.input, "2+2");
     assert_eq!(app.character_index, 3);
     assert_eq!(app.focus, Focus::Input);
+    assert_eq!(app.input_edit_mode, InputEditMode::Insert);
 }
 
 #[test]
-fn enter_on_variables_populates_input_from_selected_variable() {
+fn enter_on_variables_populates_input_from_selected_variable_expression() {
     let mut app = App::new();
     app.input = "x=2".to_string();
     app.submit_message();
     app.input = "y=3".to_string();
     app.submit_message();
 
-    app.handle_key_event(key_event(KeyCode::Esc)); // Input -> Variables (auto-select first)
-    app.handle_key_event(key_event(KeyCode::Right)); // Right arrow to History
-    app.handle_key_event(key_event(KeyCode::Enter)); // Populate input
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
+    app.handle_key_event(key_event(KeyCode::Esc)); // Normal -> Variables
+    app.handle_key_event(key_event(KeyCode::Enter)); // Populate input from selected variable
 
     assert_eq!(app.input, "x=2");
     assert_eq!(app.character_index, 3);
     assert_eq!(app.focus, Focus::Input);
+    assert_eq!(app.input_edit_mode, InputEditMode::Insert);
+}
+
+#[test]
+fn normal_mode_navigation_and_delete_under_cursor_work() {
+    let mut app = App::new();
+    app.input = "12+34".to_string();
+    app.character_index = 5;
+
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
+
+    app.handle_key_event(key_event(KeyCode::Char('0')));
+    assert_eq!(app.character_index, 0);
+
+    app.handle_key_event(key_event(KeyCode::Char('$')));
+    assert_eq!(app.character_index, 4);
+
+    app.handle_key_event(key_event(KeyCode::Char('h')));
+    assert_eq!(app.character_index, 3);
+
+    app.handle_key_event(key_event(KeyCode::Char('x')));
+    assert_eq!(app.input, "12+4");
+    assert_eq!(app.character_index, 3);
+}
+
+#[test]
+fn normal_mode_word_motions_work() {
+    let mut app = App::new();
+    app.input = "abc + def_1".to_string();
+    app.character_index = 0;
+
+    app.handle_key_event(key_event(KeyCode::Esc)); // Insert -> Normal
+    app.handle_key_event(key_event(KeyCode::Char('w')));
+    assert_eq!(app.character_index, 6);
+
+    app.handle_key_event(key_event(KeyCode::Char('b')));
+    assert_eq!(app.character_index, 0);
 }
 
 #[test]

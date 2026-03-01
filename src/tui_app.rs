@@ -12,7 +12,7 @@ use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyEventKind},
     layout::{Constraint, Layout, Position},
-    style::{Color, Style, Stylize},
+    style::{Color, Style},
     text::{Line, Span, Text},
     widgets::{Block, List, ListItem, ListState, Padding, Paragraph},
 };
@@ -40,6 +40,12 @@ pub enum Focus {
     Variables,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputEditMode {
+    Insert,
+    Normal,
+}
+
 /// App holds the state of the application
 pub struct App {
     /// Current value of the input box
@@ -52,6 +58,7 @@ pub struct App {
     pub variables: HashMap<String, VariableEntry>,
     pub input_mode: bool,
     pub focus: Focus,
+    pub input_edit_mode: InputEditMode,
     pub history_state: ListState,
     pub variables_state: ListState,
 }
@@ -65,6 +72,7 @@ impl App {
             variables: HashMap::new(),
             input_mode: true,
             focus: Focus::Input,
+            input_edit_mode: InputEditMode::Insert,
             history_state: ListState::default(),
             variables_state: ListState::default(),
         }
@@ -80,6 +88,36 @@ impl App {
         self.character_index = self.clamp_cursor(cursor_moved_right);
     }
 
+    fn move_cursor_left_normal(&mut self) {
+        if self.input.is_empty() {
+            self.character_index = 0;
+            return;
+        }
+        self.character_index = self.character_index.saturating_sub(1);
+    }
+
+    fn move_cursor_right_normal(&mut self) {
+        let len = self.input.chars().count();
+        if len == 0 {
+            self.character_index = 0;
+            return;
+        }
+        self.character_index = (self.character_index + 1).min(len - 1);
+    }
+
+    fn move_cursor_to_line_start(&mut self) {
+        self.character_index = 0;
+    }
+
+    fn move_cursor_to_line_end_insert(&mut self) {
+        self.character_index = self.input.chars().count();
+    }
+
+    fn move_cursor_to_line_end_normal(&mut self) {
+        let len = self.input.chars().count();
+        self.character_index = len.saturating_sub(1);
+    }
+
     pub fn enter_char(&mut self, new_char: char) {
         let index = self.byte_index();
         self.input.insert(index, new_char);
@@ -88,7 +126,7 @@ impl App {
 
     /// Returns the byte index based on the character position.
     ///
-    /// Since each character in a string can be contain multiple bytes, it's necessary to calculate
+    /// Since each character in a string can contain multiple bytes, it's necessary to calculate
     /// the byte index based on the index of the character.
     fn byte_index(&self) -> usize {
         self.input
@@ -101,23 +139,87 @@ impl App {
     pub fn delete_char(&mut self) {
         let is_not_cursor_leftmost = self.character_index != 0;
         if is_not_cursor_leftmost {
-            // Method "remove" is not used on the saved text for deleting the selected char.
-            // Reason: Using remove on String works on bytes instead of the chars.
-            // Using remove would require special care because of char boundaries.
-
             let current_index = self.character_index;
             let from_left_to_current_index = current_index - 1;
 
-            // Getting all characters before the selected character.
             let before_char_to_delete = self.input.chars().take(from_left_to_current_index);
-            // Getting all characters after selected character.
             let after_char_to_delete = self.input.chars().skip(current_index);
 
-            // Put all characters together except the selected one.
-            // By leaving the selected one out, it is forgotten and therefore deleted.
             self.input = before_char_to_delete.chain(after_char_to_delete).collect();
             self.move_cursor_left();
         }
+    }
+
+    fn delete_char_under_cursor(&mut self) {
+        let len = self.input.chars().count();
+        if len == 0 || self.character_index >= len {
+            return;
+        }
+
+        let idx = self.character_index;
+        let before = self.input.chars().take(idx);
+        let after = self.input.chars().skip(idx + 1);
+        self.input = before.chain(after).collect();
+
+        let new_len = self.input.chars().count();
+        if new_len == 0 {
+            self.character_index = 0;
+        } else if self.character_index >= new_len {
+            self.character_index = new_len - 1;
+        }
+    }
+
+    fn is_word_char(c: char) -> bool {
+        c.is_alphanumeric() || c == '_'
+    }
+
+    fn move_cursor_word_forward(&mut self) {
+        let chars: Vec<char> = self.input.chars().collect();
+        let len = chars.len();
+        if len == 0 {
+            self.character_index = 0;
+            return;
+        }
+
+        let mut i = self.character_index.min(len - 1);
+
+        if Self::is_word_char(chars[i]) {
+            while i < len && Self::is_word_char(chars[i]) {
+                i += 1;
+            }
+        }
+
+        while i < len && !Self::is_word_char(chars[i]) {
+            i += 1;
+        }
+
+        self.character_index = if i >= len { len - 1 } else { i };
+    }
+
+    fn move_cursor_word_backward(&mut self) {
+        let chars: Vec<char> = self.input.chars().collect();
+        let len = chars.len();
+        if len == 0 {
+            self.character_index = 0;
+            return;
+        }
+
+        let mut i = self.character_index.min(len - 1);
+        if i == 0 {
+            return;
+        }
+
+        i -= 1;
+
+        while i > 0 && !Self::is_word_char(chars[i]) {
+            i -= 1;
+        }
+
+        while i > 0 && Self::is_word_char(chars[i - 1]) {
+            i -= 1;
+        }
+
+        self.character_index = i;
     }
 
     fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
@@ -137,6 +239,25 @@ impl App {
             Focus::History => self.select_first_history_if_available(),
             Focus::Variables => self.select_first_variable_if_available(),
         }
+    }
+
+    fn set_input_edit_mode(&mut self, mode: InputEditMode) {
+        self.input_edit_mode = mode;
+    }
+
+    fn switch_to_normal_mode(&mut self) {
+        self.input_edit_mode = InputEditMode::Normal;
+        let len = self.input.chars().count();
+        if len == 0 {
+            self.character_index = 0;
+            return;
+        }
+        self.character_index = self.character_index.saturating_sub(1).min(len - 1);
+    }
+
+    fn switch_to_insert_mode(&mut self) {
+        self.input_edit_mode = InputEditMode::Insert;
+        self.character_index = self.clamp_cursor(self.character_index);
     }
 
     fn select_first_history_if_available(&mut self) {
@@ -230,6 +351,7 @@ impl App {
             self.input = self.history[history_idx].expression.clone();
             self.character_index = self.input.chars().count();
             self.set_focus(Focus::Input);
+            self.set_input_edit_mode(InputEditMode::Insert);
         }
     }
 
@@ -242,6 +364,7 @@ impl App {
             self.input = entry.expression.clone();
             self.character_index = self.input.chars().count();
             self.set_focus(Focus::Input);
+            self.set_input_edit_mode(InputEditMode::Insert);
         }
     }
 
@@ -249,8 +372,10 @@ impl App {
         if self.input.is_empty() {
             return;
         }
+
         let mut tokenized = tokenize(&self.input);
         let mut var_name: Option<String> = None;
+
         if tokenized.contains(&"=") {
             let parsed_variables = parse_variables(tokenized);
             match parsed_variables {
@@ -268,11 +393,11 @@ impl App {
                 }
             }
         }
+
         let res = calculate(tokenized, &self.variables);
         match res {
             Ok(result) => {
                 if let Some(var_name) = var_name {
-                    println!("expression {}", self.input.clone());
                     self.variables.insert(
                         var_name.to_string(),
                         VariableEntry {
@@ -296,84 +421,170 @@ impl App {
                 });
             }
         }
+
         self.input.clear();
         self.reset_cursor();
         self.set_focus(Focus::Input);
+        self.set_input_edit_mode(InputEditMode::Insert);
     }
 
-    pub fn handle_key_event(&mut self, key: KeyEvent) -> bool {
-        match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => true,
-            KeyCode::Tab => false,
-            KeyCode::BackTab => false,
+    fn handle_input_key_event(&mut self, code: KeyCode) -> bool {
+        match self.input_edit_mode {
+            InputEditMode::Insert => match code {
+                KeyCode::Esc => {
+                    self.switch_to_normal_mode();
+                    false
+                }
+                KeyCode::Enter => {
+                    self.submit_message();
+                    false
+                }
+                KeyCode::Char(to_insert) => {
+                    self.enter_char(to_insert);
+                    false
+                }
+                KeyCode::Backspace => {
+                    self.delete_char();
+                    false
+                }
+                KeyCode::Left => {
+                    self.move_cursor_left();
+                    false
+                }
+                KeyCode::Right => {
+                    self.move_cursor_right();
+                    false
+                }
+                KeyCode::Up => {
+                    if let Some(last) = self.history.last() {
+                        self.input = last.expression.clone();
+                        self.character_index = self.input.chars().count();
+                    }
+                    false
+                }
+                _ => false,
+            },
+            InputEditMode::Normal => match code {
+                KeyCode::Esc => {
+                    self.set_focus(Focus::Variables);
+                    false
+                }
+                KeyCode::Enter => {
+                    self.submit_message();
+                    false
+                }
+                KeyCode::Left | KeyCode::Char('h') => {
+                    self.move_cursor_left_normal();
+                    false
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    self.move_cursor_right_normal();
+                    false
+                }
+                KeyCode::Down => {
+                    self.focus = Focus::History;
+                    false
+                }
+                KeyCode::Char('0') => {
+                    self.move_cursor_to_line_start();
+                    false
+                }
+                KeyCode::Char('$') => {
+                    self.move_cursor_to_line_end_normal();
+                    false
+                }
+                KeyCode::Char('x') => {
+                    self.delete_char_under_cursor();
+                    false
+                }
+                KeyCode::Char('w') => {
+                    self.move_cursor_word_forward();
+                    false
+                }
+                KeyCode::Char('b') => {
+                    self.move_cursor_word_backward();
+                    false
+                }
+                KeyCode::Char('i') => {
+                    self.switch_to_insert_mode();
+                    false
+                }
+                KeyCode::Char('a') => {
+                    let len = self.input.chars().count();
+                    if len == 0 {
+                        self.character_index = 0;
+                    } else {
+                        self.character_index = (self.character_index + 1).min(len);
+                    }
+                    self.switch_to_insert_mode();
+                    false
+                }
+                KeyCode::Char('A') => {
+                    self.move_cursor_to_line_end_insert();
+                    self.switch_to_insert_mode();
+                    false
+                }
+                KeyCode::Char('I') => {
+                    self.move_cursor_to_line_start();
+                    self.switch_to_insert_mode();
+                    false
+                }
+                _ => false,
+            },
+        }
+    }
+
+    fn handle_list_key_event(&mut self, code: KeyCode) -> bool {
+        match code {
             KeyCode::Enter => {
                 match self.focus {
-                    Focus::Input => self.submit_message(),
                     Focus::History => self.populate_input_from_history(),
                     Focus::Variables => self.populate_input_from_variable(),
+                    Focus::Input => {}
                 }
                 false
             }
-            KeyCode::Char('i') if !matches!(self.focus, Focus::Input) => {
+            KeyCode::Char('i') => {
                 self.set_focus(Focus::Input);
-                false
-            }
-            KeyCode::Char(to_insert) => {
-                if matches!(self.focus, Focus::Input) {
-                    self.enter_char(to_insert);
-                }
-                false
-            }
-            KeyCode::Backspace => {
-                if matches!(self.focus, Focus::Input) {
-                    self.delete_char();
-                }
+                self.set_input_edit_mode(InputEditMode::Insert);
                 false
             }
             KeyCode::Left => {
-                if matches!(self.focus, Focus::Input) {
-                    self.move_cursor_left();
-                } else {
-                    self.set_focus(Focus::History);
-                }
+                self.set_focus(Focus::History);
                 false
             }
             KeyCode::Right => {
-                if matches!(self.focus, Focus::Input) {
-                    self.move_cursor_right();
-                } else {
-                    self.set_focus(Focus::Variables);
-                }
+                self.set_focus(Focus::Variables);
                 false
             }
             KeyCode::Up => {
                 match self.focus {
-                    Focus::Input => {
-                        if let Some(last) = self.history.last() {
-                            self.input = last.expression.clone();
-                            self.character_index = self.input.chars().count();
-                        }
-                    }
                     Focus::History => self.move_history_selection_up(),
                     Focus::Variables => self.move_variables_selection_up(),
+                    Focus::Input => {}
                 }
                 false
             }
             KeyCode::Down => {
                 match self.focus {
-                    Focus::Input => {}
                     Focus::History => self.move_history_selection_down(),
                     Focus::Variables => self.move_variables_selection_down(),
-                }
-                false
-            }
-            KeyCode::Esc => {
-                if matches!(self.focus, Focus::Input) {
-                    self.set_focus(Focus::History);
+                    Focus::Input => {}
                 }
                 false
             }
             _ => false,
+        }
+    }
+
+    pub fn handle_key_event(&mut self, key: KeyEvent) -> bool {
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            return true;
+        }
+
+        match self.focus {
+            Focus::Input => self.handle_input_key_event(key.code),
+            Focus::History | Focus::Variables => self.handle_list_key_event(key.code),
         }
     }
 
@@ -398,23 +609,36 @@ impl App {
         ]);
         let [help_area, input_area, messages_area] = vertical.areas(frame.area());
 
-        let (msg, style) = (
-            vec!["Enter".bold(), " to calculate".into()],
-            Style::default(),
-        );
-        let text = Text::from(Line::from(msg)).patch_style(style);
-        let help_message = Paragraph::new(text);
+        let mode_label = match self.focus {
+            Focus::Input => match self.input_edit_mode {
+                InputEditMode::Insert => "INSERT",
+                InputEditMode::Normal => "NORMAL",
+            },
+            Focus::History => "HISTORY",
+            Focus::Variables => "VARIABLES",
+        };
+
+        let help_line = Line::from(vec![
+            Span::styled(format!("[{}] ", mode_label), Style::default().bold()),
+            Span::raw("Enter: submit/select • Esc: mode/focus • i: input mode"),
+        ]);
+        let help_message = Paragraph::new(Text::from(help_line));
         frame.render_widget(help_message, help_area);
 
         let caret = if matches!(self.focus, Focus::Input) {
-            "❯"
+            match self.input_edit_mode {
+                InputEditMode::Insert => "❯",
+                InputEditMode::Normal => "▮",
+            }
         } else {
             "❮"
         };
+
         let input = Paragraph::new(format!("{} {}", caret, self.input))
             .style(Style::new().bg(Color::DarkGray))
             .block(Block::new().padding(Padding::vertical(1)));
         frame.render_widget(input, input_area);
+
         if matches!(self.focus, Focus::Input) {
             frame.set_cursor_position(Position::new(
                 input_area.x + self.character_index as u16 + 2,
@@ -451,6 +675,7 @@ impl App {
                 }
             })
             .collect();
+
         let history_focused = matches!(self.focus, Focus::History);
         let results = List::new(results)
             .highlight_style(Style::default().bg(Color::DarkGray).bold())
@@ -486,6 +711,7 @@ impl App {
                 ListItem::new(content)
             })
             .collect();
+
         let variables_focused = matches!(self.focus, Focus::Variables);
         let variables = List::new(variable_items)
             .highlight_style(Style::default().bg(Color::DarkGray).bold())
