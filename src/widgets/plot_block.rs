@@ -1,12 +1,11 @@
 use ratatui::{
-    Frame,
-    layout::{Constraint, Rect},
+    layout::Constraint,
     style::{Color, Style},
     symbols::Marker,
-    widgets::{Axis, Block, BorderType, Chart, Dataset, GraphType, LegendPosition},
+    widgets::{Axis, Block, BorderType, Chart, Dataset, GraphType, LegendPosition, Padding},
 };
 
-pub fn render_scatter(frame: &mut Frame, area: Rect, data: &[(f64, f64)], name: String) {
+pub fn render_scatter<'a>(data: &'a [(f64, f64)], name: String) -> Chart<'a> {
     let datasets = vec![
         Dataset::default()
             .name(name)
@@ -19,13 +18,14 @@ pub fn render_scatter(frame: &mut Frame, area: Rect, data: &[(f64, f64)], name: 
     let (x_min, x_max, y_min, y_max) = min_max_xy(data).unwrap_or((0., 10., 0., 100.));
     let x_labels = generate_labels(x_min, x_max);
     let y_labels = generate_labels(y_min, y_max);
-    let chart = Chart::new(datasets)
+
+    Chart::new(datasets)
         .block(
             Block::bordered()
                 .title("Scatter Chart")
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Magenta)),
-            // .padding(Padding::uniform(1)),
+                .border_style(Style::default().fg(Color::Magenta))
+                .padding(Padding::uniform(1)),
         )
         .x_axis(
             Axis::default()
@@ -42,9 +42,7 @@ pub fn render_scatter(frame: &mut Frame, area: Rect, data: &[(f64, f64)], name: 
                 .labels(y_labels),
         )
         .legend_position(Some(LegendPosition::Bottom))
-        .hidden_legend_constraints((Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)));
-
-    frame.render_widget(chart, area);
+        .hidden_legend_constraints((Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)))
 }
 
 fn min_max_xy(data: &[(f64, f64)]) -> Option<(f64, f64, f64, f64)> {

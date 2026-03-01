@@ -84,8 +84,20 @@ impl InputEditor {
         &self.register
     }
 
-    pub fn visual_selection_range(&self) -> Option<(usize, usize)> {
-        self.visual_range()
+    pub fn visual_range(&self) -> Option<(usize, usize)> {
+        let len = self.char_len();
+        if len == 0 {
+            return None;
+        }
+
+        let anchor = self.visual_anchor?.min(len - 1);
+        let cursor = self.cursor.min(len - 1);
+
+        if anchor <= cursor {
+            Some((anchor, cursor))
+        } else {
+            Some((cursor, anchor))
+        }
     }
 
     pub fn set_input(&mut self, input: String) {
@@ -442,22 +454,6 @@ impl InputEditor {
                 }
                 EditorCommand::None
             }
-        }
-    }
-
-    fn visual_range(&self) -> Option<(usize, usize)> {
-        let len = self.char_len();
-        if len == 0 {
-            return None;
-        }
-
-        let anchor = self.visual_anchor?.min(len - 1);
-        let cursor = self.cursor.min(len - 1);
-
-        if anchor <= cursor {
-            Some((anchor, cursor))
-        } else {
-            Some((cursor, anchor))
         }
     }
 
