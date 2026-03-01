@@ -10,7 +10,7 @@ pub fn render_scatter<'a>(data: &'a [(f64, f64)], name: String) -> Chart<'a> {
         Dataset::default()
             .name(name)
             .marker(Marker::Dot)
-            .graph_type(GraphType::Scatter)
+            .graph_type(GraphType::Line)
             .style(Style::new().yellow())
             .data(data),
     ];

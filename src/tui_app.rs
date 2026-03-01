@@ -368,7 +368,7 @@ impl App {
             if unknown_variables.len() == 1 {
                 let mut plot_data: Vec<(f64, f64)> = Vec::new();
                 let mut cloned_variables = self.variables.clone();
-                for i in 0..11 {
+                for i in -10..11 {
                     cloned_variables.insert(
                         unknown_variables[0].to_string(),
                         VariableEntry {
@@ -455,11 +455,6 @@ impl App {
             EditorCommand::Submit => {
                 self.sync_public_from_editor();
                 self.submit_message();
-                false
-            }
-            EditorCommand::ExitInputMode => {
-                self.sync_public_from_editor();
-                self.set_focus(Focus::History);
                 false
             }
             EditorCommand::IncrementFocus => {

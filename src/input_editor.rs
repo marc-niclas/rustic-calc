@@ -11,7 +11,6 @@ pub enum InputEditMode {
 pub enum EditorCommand {
     None,
     Submit,
-    ExitInputMode,
     IncrementFocus,
     DecrementFocus,
     Yanked { start: usize, end: usize },
@@ -370,7 +369,6 @@ impl InputEditor {
 
     fn handle_normal_key(&mut self, code: KeyCode) -> EditorCommand {
         match code {
-            KeyCode::Esc => EditorCommand::ExitInputMode,
             KeyCode::Enter => EditorCommand::Submit,
             KeyCode::Tab => EditorCommand::IncrementFocus,
             KeyCode::BackTab => EditorCommand::DecrementFocus,
