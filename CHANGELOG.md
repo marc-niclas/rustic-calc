@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.0 (2026-03-02)
+
+### Features
+
+- Add phrases ([#5](https://github.com/marc-niclas/rustic-calc/pull/5),
+  [`5f2cac2`](https://github.com/marc-niclas/rustic-calc/commit/5f2cac283004f16279e4aabd20e3bcbe7290a21c))
+
+
 ## v0.3.0 (2026-03-01)
 
 ### Features
