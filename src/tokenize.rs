@@ -66,7 +66,12 @@ pub fn tokenize(phrase: &str) -> Vec<&str> {
             b'/' => tokens.push("/"),
             b'^' => tokens.push("^"),
             b'=' => tokens.push("="),
-            b'(' => tokens.push("("),
+            b'(' => {
+                if needs_implicit_mul_before_lparen(&tokens) {
+                    tokens.push("*");
+                }
+                tokens.push("(");
+            }
             b')' => tokens.push(")"),
             _ => {}
         }
@@ -88,6 +93,13 @@ fn needs_implicit_mul_before_number(tokens: &[&str]) -> bool {
     matches!(
         tokens.last().copied(),
         Some(tok) if is_identifier_token(tok) || tok == ")"
+    )
+}
+
+fn needs_implicit_mul_before_lparen(tokens: &[&str]) -> bool {
+    matches!(
+        tokens.last().copied(),
+        Some(tok) if is_number_token(tok) || is_identifier_token(tok) || tok == ")"
     )
 }
 

@@ -5,9 +5,14 @@ version = "0.2.0"
 edition = "2024"
 
 [dependencies]
+clap = { version = "4.5.60", features = ["derive"] }
 color-eyre = "0.6.5"
 crossterm = "0.29.0"
 ratatui = "0.30.0"
 
 [dev-dependencies]
 approx = "0.5.1"
+
+[[bin]]
+name = "rcalc"
+path = "src/main.rs"

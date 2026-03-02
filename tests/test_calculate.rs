@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use approx::assert_relative_eq;
 use rustic_calc::calculate::calculate;
 use rustic_calc::tokenize::tokenize;
+use rustic_calc::types::VariableEntry;
 
 #[test]
 fn test_multiply() {
@@ -68,6 +69,41 @@ fn test_order_of_operations() {
     let tokens = vec!["2", "*", "3", "^", "2"];
     let res = calculate(tokens, &HashMap::new()).unwrap();
     assert_relative_eq!(res, 18.);
+}
+
+#[test]
+fn test_parenthesized_expression_with_power() {
+    let tokens = tokenize("(2+2)^2");
+    let res = calculate(tokens, &HashMap::new()).unwrap();
+    assert_relative_eq!(res, 16.0);
+}
+
+#[test]
+fn test_parenthesized_expression_with_variable() {
+    let tokens = tokenize("(a+5)/2");
+    let res = calculate(
+        tokens,
+        &HashMap::from([(
+            "a".to_string(),
+            VariableEntry {
+                expression: "a=5".to_string(),
+                value: 10.0,
+            },
+        )]),
+    )
+    .unwrap();
+    assert_relative_eq!(res, 7.5);
+}
+
+#[test]
+fn test_double_nested_parenthesized_expression_with_power() {
+    let tokens = tokenize("((2+2)/5)^2");
+    let res = calculate(tokens, &HashMap::new()).unwrap();
+    assert_relative_eq!(res, 0.64);
+
+    let tokens = tokenize("3((2+2)/5)^2");
+    let res = calculate(tokens, &HashMap::new()).unwrap();
+    assert_relative_eq!(res, 1.92, epsilon = 1e-12);
 }
 
 #[test]

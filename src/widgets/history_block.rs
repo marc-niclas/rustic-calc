@@ -23,14 +23,14 @@ pub fn render_history_block<'a>(history: &[History], focus: Focus) -> List<'a> {
             }
             (_, Some(_)) => {
                 let content = Line::from(vec![
-                    Span::raw(format!("{}: ", i + 1)),
+                    Span::styled(format!("{} ", i + 1), Style::default().dim()),
                     Span::styled(format!("{m}"), Style::default().red().bold()),
                 ]);
                 ListItem::new(content)
             }
             (_, _) => {
                 let content = Line::from(vec![
-                    Span::raw(format!("{}: ", i + 1)),
+                    Span::styled(format!("{} ", i + 1), Style::default().dim()),
                     Span::styled(format!("{m}"), Style::default().magenta().bold()),
                 ]);
                 ListItem::new(content)

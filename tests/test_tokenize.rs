@@ -38,3 +38,12 @@ fn coefficients_tokenized() {
     let res = tokenize("7x");
     assert_eq!(res, vec!["7", "*", "x"]);
 }
+
+#[test]
+fn phrase_tokenized() {
+    let res = tokenize("2(a+b)+7");
+    assert_eq!(res, vec!["2", "*", "(", "a", "+", "b", ")", "+", "7"]);
+
+    let res = tokenize("(a+5)/2");
+    assert_eq!(res, vec!["(", "a", "+", "5", ")", "/", "2"]);
+}
