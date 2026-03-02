@@ -4,7 +4,7 @@ use ratatui::{
     widgets::{Block, BorderType, List, ListItem, Padding},
 };
 
-use crate::tui_app::{Focus, History};
+use crate::types::{Focus, History};
 
 pub fn render_history_block<'a>(history: &[History], focus: Focus) -> List<'a> {
     let results: Vec<ListItem> = history

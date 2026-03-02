@@ -4,7 +4,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::tui_app::{Focus, InputEditMode};
+use crate::{input_editor::InputEditMode, types::Focus};
 
 pub fn render_help_message<'a>(focus: Focus, input_edit_mode: InputEditMode) -> Paragraph<'a> {
     let mode_label = match focus {

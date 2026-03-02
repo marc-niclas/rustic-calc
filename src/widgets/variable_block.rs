@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, BorderType, List, ListItem, Padding},
 };
 
-use crate::{tui_app::Focus, types::VariableEntry};
+use crate::types::{Focus, VariableEntry};
 
 pub fn render_variable_block<'a>(
     variables: &HashMap<String, VariableEntry>,
