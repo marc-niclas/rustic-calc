@@ -7,8 +7,8 @@ use ratatui::{
 };
 
 use crate::{
-    tui_app::{Focus, InputEditMode},
-    types::YankFlash,
+    tui_app::InputEditMode,
+    types::{Focus, YankFlash},
 };
 
 pub fn render_input<'a>(

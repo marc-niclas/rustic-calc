@@ -1,5 +1,11 @@
+use std::{env, fs};
+
 use color_eyre::Result;
-use rustic_calc::tui_app::App;
+use color_eyre::eyre::eyre;
+use rustic_calc::{
+    io::{get_state_from_file, reset_file_state},
+    tui_app::App,
+};
 
 use clap::{Parser, Subcommand};
 
@@ -15,6 +21,7 @@ struct Cli {
 enum Commands {
     /// Run the application using cargo
     Run {},
+    Clear {},
 }
 
 fn main() -> Result<()> {
@@ -22,13 +29,26 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Run {} => run(),
+        Commands::Clear {} => clear(),
     }
 }
 
 fn run() -> Result<()> {
+    let home = env::var("HOME").map_err(|_| eyre!("HOME is not set"))?;
+    fs::create_dir_all(format!("{home}/.config/rcalc"))?;
+
     color_eyre::install()?;
     let terminal = ratatui::init();
-    let app_result = App::new().run(terminal);
+    let app_state = get_state_from_file();
+    let app_result = match app_state {
+        Ok(state) => App::from(&state).run(terminal),
+        Err(_) => App::new().run(terminal),
+    };
     ratatui::restore();
     app_result
+}
+
+fn clear() -> Result<()> {
+    let _ = reset_file_state();
+    Ok(())
 }

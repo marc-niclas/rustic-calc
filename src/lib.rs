@@ -8,6 +8,7 @@ pub mod widgets {
     pub mod plot_block;
     pub mod variable_block;
 }
+pub mod io;
 pub mod tokenize;
 pub mod tui_app;
 pub mod types;

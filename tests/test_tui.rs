@@ -1,5 +1,8 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use rustic_calc::tui_app::{App, Focus, InputEditMode};
+use rustic_calc::{
+    tui_app::{App, InputEditMode},
+    types::Focus,
+};
 
 fn key_event(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)

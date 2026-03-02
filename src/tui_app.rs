@@ -5,7 +5,10 @@ use std::{
 
 pub use crate::input_editor::InputEditMode;
 use crate::{
-    calculate::calculate, inspect::inspect_unknown_variables, types::YankFlash,
+    calculate::calculate,
+    inspect::inspect_unknown_variables,
+    io::{reset_file_state, write_state_to_file},
+    types::{AppState, Focus, History, YankFlash},
     widgets::input_area::render_input,
 };
 use crate::{
@@ -23,48 +26,6 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Position},
     widgets::ListState,
 };
-
-#[derive(Debug, Clone)]
-pub struct History {
-    pub expression: String,
-    pub result: Option<f64>,
-    pub error: Option<String>,
-}
-
-impl std::fmt::Display for History {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match (self.result, self.error.clone()) {
-            (Some(result), _) => write!(f, "{} = {}", self.expression, result),
-            (_, Some(error)) => write!(f, "'{}' resulted in error: {}", self.expression, error),
-            (_, _) => write!(f, "{} 📈", self.expression),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Focus {
-    Input,
-    History,
-    Variables,
-}
-
-impl Focus {
-    pub fn next(self) -> Self {
-        match self {
-            Focus::Input => Focus::History,
-            Focus::History => Focus::Variables,
-            Focus::Variables => Focus::Input, // wrap
-        }
-    }
-
-    pub fn prev(self) -> Self {
-        match self {
-            Focus::Input => Focus::Variables, // wrap
-            Focus::History => Focus::Input,
-            Focus::Variables => Focus::History,
-        }
-    }
-}
 
 /// App holds the state of the application
 pub struct App {
@@ -101,6 +62,25 @@ impl App {
             history_state: ListState::default(),
             variables_state: ListState::default(),
             plot_data: None,
+            editor,
+            editor_needs_sync: false,
+            yank_flash: None,
+        }
+    }
+
+    pub fn from(state: &AppState) -> Self {
+        let editor = InputEditor::new();
+        Self {
+            input: editor.input().to_string(),
+            history: state.history.clone(),
+            character_index: editor.cursor(),
+            variables: state.variables.clone(),
+            input_mode: true,
+            focus: Focus::Input,
+            input_edit_mode: editor.mode(),
+            history_state: ListState::default(),
+            variables_state: ListState::default(),
+            plot_data: state.plot_data.clone(),
             editor,
             editor_needs_sync: false,
             yank_flash: None,
@@ -200,6 +180,14 @@ impl App {
         self.ensure_editor_synced_from_public();
         self.editor.backspace();
         self.sync_public_from_editor();
+    }
+
+    pub fn to_state(&self) -> AppState {
+        AppState {
+            history: self.history.clone(),
+            variables: self.variables.clone(),
+            plot_data: self.plot_data.clone(),
+        }
     }
 
     fn set_focus(&mut self, focus: Focus) {
@@ -343,6 +331,15 @@ impl App {
             return;
         }
 
+        if self.input == "/clear" {
+            self.variables.clear();
+            self.history.clear();
+            self.set_input_text(String::new());
+            self.set_focus(Focus::Input);
+            let _ = reset_file_state();
+            return;
+        }
+
         let mut tokenized = tokenize(&self.input);
         let mut var_name: Option<String> = None;
         if tokenized.contains(&"=") {
@@ -387,6 +384,12 @@ impl App {
                 });
                 self.input.clear();
                 self.reset_cursor();
+                match write_state_to_file(&self.to_state()) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        eprintln!("Failed to write state to file: {}", err);
+                    }
+                }
                 return;
             }
 
@@ -400,6 +403,12 @@ impl App {
             });
             self.input.clear();
             self.reset_cursor();
+            match write_state_to_file(&self.to_state()) {
+                Ok(_) => {}
+                Err(err) => {
+                    eprintln!("Failed to write state to file: {}", err);
+                }
+            }
             return;
         }
         let res = calculate(tokenized, &self.variables);
@@ -435,6 +444,12 @@ impl App {
         self.set_focus(Focus::Input);
         self.set_input_edit_mode(InputEditMode::Insert);
         self.yank_flash = None;
+        match write_state_to_file(&self.to_state()) {
+            Ok(_) => {}
+            Err(err) => {
+                eprintln!("Failed to write state to file: {}", err);
+            }
+        }
     }
 
     fn handle_input_key_event(&mut self, key: KeyEvent) -> bool {

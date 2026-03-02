@@ -1,7 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use rustic_calc::{
     input_editor::{InputEditor, Motion},
-    tui_app::{App, Focus, InputEditMode},
+    tui_app::{App, InputEditMode},
+    types::Focus,
 };
 
 fn key(code: KeyCode) -> KeyEvent {
