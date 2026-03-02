@@ -34,3 +34,10 @@ fn inspect_duplicate_variables() {
     assert_eq!(unknown_variables.len(), 1);
     assert_eq!(unknown_variables[0], "a".to_string());
 }
+
+#[test]
+fn inspect_phrase() {
+    let unknown_variables =
+        inspect_unknown_variables(&vec!["3", "*", "(", "2", "-", "5", ")"], &HashMap::new());
+    assert!(unknown_variables.is_empty());
+}

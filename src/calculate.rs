@@ -6,86 +6,151 @@ pub fn calculate(
     tokens: Vec<&str>,
     variables: &HashMap<String, VariableEntry>,
 ) -> Result<f64, String> {
-    let precedence_map: HashMap<String, i32> = HashMap::from([
-        ("^".to_string(), 3),
-        ("*".to_string(), 2),
-        ("/".to_string(), 2),
-        ("+".to_string(), 1),
-        ("-".to_string(), 1),
-    ]);
-
-    let mut values: Vec<f64> = Vec::new();
-    let mut ops: Vec<String> = Vec::new();
-
-    for (i, t) in tokens.iter().enumerate() {
-        match t.parse::<f64>() {
-            Ok(num) => values.push(num),
-            Err(_) => {
-                if !precedence_map.keys().any(|k| k == t) {
-                    if let Some(var) = variables.get(*t) {
-                        values.push(var.value);
-                    } else {
-                        return Err(format!("Unknown variable: {}", t));
-                    }
-                } else {
-                    if *t == "-" && (i == 0 || precedence_map.contains_key(tokens[i - 1])) {
-                        values.push(0.);
-                    }
-
-                    while !ops.is_empty()
-                        && precedence_map.get(&ops[ops.len() - 1]) >= precedence_map.get(*t)
-                    {
-                        apply_top_operator(&mut values, &mut ops)?;
-                    }
-                    ops.push(t.to_string());
-                }
-            }
-        }
+    if tokens.is_empty() {
+        return Err("Expression could not be parsed".to_string());
     }
 
-    while !ops.is_empty() {
-        apply_top_operator(&mut values, &mut ops)?;
+    let mut parser = Parser::new(&tokens, variables);
+    let value = parser.parse_expr()?;
+
+    if let Some(tok) = parser.peek() {
+        return Err(format!("Unexpected token: {}", tok));
     }
 
-    if values.is_empty() {
-        Err("Expression could not be parsed".to_string())
-    } else {
-        Ok(values[values.len() - 1])
-    }
+    Ok(value)
 }
 
-fn apply_top_operator(values: &mut Vec<f64>, ops: &mut Vec<String>) -> Result<(), String> {
-    let b = values.pop();
-    let a = values.pop();
+struct Parser<'a> {
+    tokens: &'a [&'a str],
+    pos: usize,
+    variables: &'a HashMap<String, VariableEntry>,
+}
 
-    if let Some(op) = ops.pop() {
-        match (a, b) {
-            (Some(a), Some(b)) => match op.as_str() {
-                "+" => {
-                    values.push(a + b);
-                    Ok(())
-                }
-                "-" => {
-                    values.push(a - b);
-                    Ok(())
-                }
-                "*" => {
-                    values.push(a * b);
-                    Ok(())
-                }
-                "/" => {
-                    values.push(a / b);
-                    Ok(())
-                }
-                "^" => {
-                    values.push(a.powf(b));
-                    Ok(())
-                }
-                _ => Err("Missing operator".to_string()),
-            },
-            _ => Err("Missing operand".to_string()),
+impl<'a> Parser<'a> {
+    fn new(tokens: &'a [&'a str], variables: &'a HashMap<String, VariableEntry>) -> Self {
+        Self {
+            tokens,
+            pos: 0,
+            variables,
         }
-    } else {
-        Err("Missing operator".to_string())
+    }
+
+    fn peek(&self) -> Option<&'a str> {
+        self.tokens.get(self.pos).copied()
+    }
+
+    fn next(&mut self) -> Option<&'a str> {
+        let tok = self.peek();
+        if tok.is_some() {
+            self.pos += 1;
+        }
+        tok
+    }
+
+    fn consume(&mut self, expected: &str) -> bool {
+        if self.peek() == Some(expected) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    // expr := add_sub
+    fn parse_expr(&mut self) -> Result<f64, String> {
+        self.parse_add_sub()
+    }
+
+    // add_sub := mul_div (("+" | "-") mul_div)*
+    fn parse_add_sub(&mut self) -> Result<f64, String> {
+        let mut lhs = self.parse_mul_div()?;
+
+        loop {
+            if self.consume("+") {
+                let rhs = self.parse_mul_div()?;
+                lhs += rhs;
+            } else if self.consume("-") {
+                let rhs = self.parse_mul_div()?;
+                lhs -= rhs;
+            } else {
+                break;
+            }
+        }
+
+        Ok(lhs)
+    }
+
+    // mul_div := unary (("*" | "/") unary)*
+    fn parse_mul_div(&mut self) -> Result<f64, String> {
+        let mut lhs = self.parse_unary()?;
+
+        loop {
+            if self.consume("*") {
+                let rhs = self.parse_unary()?;
+                lhs *= rhs;
+            } else if self.consume("/") {
+                let rhs = self.parse_unary()?;
+                lhs /= rhs;
+            } else {
+                break;
+            }
+        }
+
+        Ok(lhs)
+    }
+
+    // unary := ("+" | "-") unary | power
+    fn parse_unary(&mut self) -> Result<f64, String> {
+        if self.consume("+") {
+            return self.parse_unary();
+        }
+
+        if self.consume("-") {
+            return Ok(-self.parse_unary()?);
+        }
+
+        self.parse_power()
+    }
+
+    // power := primary ("^" unary)?
+    // Right-associative because exponent is parsed via unary -> power.
+    fn parse_power(&mut self) -> Result<f64, String> {
+        let base = self.parse_primary()?;
+
+        if self.consume("^") {
+            let exponent = self.parse_unary()?;
+            Ok(base.powf(exponent))
+        } else {
+            Ok(base)
+        }
+    }
+
+    // primary := NUMBER | IDENT | "(" expr ")"
+    fn parse_primary(&mut self) -> Result<f64, String> {
+        let Some(tok) = self.next() else {
+            return Err("Expression could not be parsed".to_string());
+        };
+
+        if tok == "(" {
+            let value = self.parse_expr()?;
+            if !self.consume(")") {
+                return Err("Missing closing ')'".to_string());
+            }
+            return Ok(value);
+        }
+
+        if tok == ")" {
+            return Err("Unexpected token: )".to_string());
+        }
+
+        if let Ok(num) = tok.parse::<f64>() {
+            return Ok(num);
+        }
+
+        if let Some(var) = self.variables.get(tok) {
+            return Ok(var.value);
+        }
+
+        Err(format!("Unknown variable: {}", tok))
     }
 }

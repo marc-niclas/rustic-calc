@@ -16,11 +16,12 @@ A fast terminal calculator written in Rust. `rustic-calc` provides a keyboard-dr
 - **Vim-style input editor** with `Insert`, `Normal`, and `Visual` modes
 - **Expression evaluation** with operator precedence for:
   - `+`, `-`, `*`, `/`, `^`
+- **Parentheses support** for grouped expressions (including nested groups)
 - **Unary minus** support for negative values
 - **Variables** via assignment syntax (`x=2+3`) and reuse in later expressions
-- **Implicit multiplication** support (`7x` becomes `7*x`)
+- **Implicit multiplication** support (`7x` becomes `7*x`, `2(a+b)` becomes `2*(a+b)`)
 - **History recall and selection** from the history pane
-- **Automatic plotting** for expressions with exactly one unknown variable (sampled from `-10` to `10`)
+- **Automatic scatter plotting** for expressions with exactly one unknown variable (sampled from `-10` to `10`)
 - **Inline error reporting** for parse/evaluation issues
 
 ## 🚀 Getting Started
@@ -36,7 +37,7 @@ Clone the repository and build the project using Cargo:
 ```bash
 git clone https://github.com/marc-niclas/rustic-calc.git
 cd rustic-calc
-cargo build --release
+cargo install --path .
 ```
 
 ### Usage
@@ -44,7 +45,7 @@ cargo build --release
 Run the calculator:
 
 ```bash
-cargo run --release
+rcalc run
 ```
 
 ### Expression examples
@@ -54,6 +55,7 @@ cargo run --release
 b=2
 a=b+5
 7x+a        # plots y = 7x + a for x in [-10, 10]
+2(a+b)      # implicit multiplication with parentheses
 ```
 
 ### Controls
