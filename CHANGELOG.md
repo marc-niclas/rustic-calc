@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.5.0 (2026-03-02)
+
+### Features
+
+- Add memory ([#6](https://github.com/marc-niclas/rustic-calc/pull/6),
+  [`69d49e3`](https://github.com/marc-niclas/rustic-calc/commit/69d49e3c14b161f5eb154160f5bdd81c21e808dd))
+
+
 ## v0.4.0 (2026-03-02)
 
 ### Features
