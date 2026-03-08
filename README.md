@@ -4,7 +4,7 @@
   <img src=".github/assets/logo.svg" alt="rustic-calc logo" width="300" />
 </p>
 
-<img src=".github/assets/demo.gif" alt="rustic-calc demo" width="300" />
+<img src=".github/assets/demo.gif" alt="rustic-calc demo" width="500" />
 
 [![CI](https://github.com/marc-niclas/rustic-calc/actions/workflows/ci.yml/badge.svg)](https://github.com/marc-niclas/rustic-calc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
