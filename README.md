@@ -1,8 +1,6 @@
 # 🦀 rustic-calc
 
-<p align="center">
-  <img src=".github/assets/logo.svg" alt="rustic-calc logo" width="200" />
-</p>
+<img src=".github/assets/logo.svg" alt="rustic-calc logo" width="200" />
 
 <img src=".github/assets/demo.gif" alt="rustic-calc demo" width="600" />
 
