@@ -1,8 +1,8 @@
 # 🦀 rustic-calc
 
-<p align="center">
-  <img src=".github/assets/logo.svg" alt="rustic-calc logo" width="300" />
-</p>
+<img src=".github/assets/logo.svg" alt="rustic-calc logo" width="200" />
+
+<img src=".github/assets/demo.gif" alt="rustic-calc demo" width="800" />
 
 [![CI](https://github.com/marc-niclas/rustic-calc/actions/workflows/ci.yml/badge.svg)](https://github.com/marc-niclas/rustic-calc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -113,7 +113,8 @@ This project uses `pre-commit` to ensure code quality.
 
 1. Install pre-commit hooks:
    ```bash
-   pre-commit install
+   prek install
+   prek install -t commit-msg
    ```
 2. The CI pipeline runs `clippy` and `rustfmt` on every push.
 
